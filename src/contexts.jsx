@@ -29,11 +29,53 @@ export function WishlistProvider({ children }) {
 export const useWishlist = () => useContext(WishlistContext)
 
 const AuthContext = createContext(null)
+const defaultVerification = {
+  emailVerified: true,
+  phoneVerified: false,
+  identityStatus: 'Not Started',
+  documentType: '',
+  country: '',
+  submittedAt: null,
+  reviewedAt: null,
+  verificationLevel: 'None',
+  phoneNumber: '',
+  identity: {},
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => stored('giftly-user', null))
+  const [user, setUser] = useState(() => {
+    const savedUser = stored('giftly-user', null)
+    return savedUser ? { ...savedUser, verification: { ...defaultVerification, ...savedUser.verification } } : null
+  })
+  const [allGiftCardVerifications, setAllGiftCardVerifications] = useState(() => stored('giftly-card-verifications', []))
   useEffect(() => user ? localStorage.setItem('giftly-user', JSON.stringify(user)) : localStorage.removeItem('giftly-user'), [user])
-  const login = (email, name = 'Aarav Mehta') => setUser({ email, name, role: email.includes('admin') ? 'admin' : 'customer' })
+  useEffect(() => localStorage.setItem('giftly-card-verifications', JSON.stringify(allGiftCardVerifications)), [allGiftCardVerifications])
+  useEffect(() => {
+    if (!user) return
+    const records = stored('giftly-verification-records', {})
+    localStorage.setItem('giftly-verification-records', JSON.stringify({ ...records, [user.email]: user.verification }))
+  }, [user])
+  const login = (email, name = 'Aarav Mehta') => {
+    const records = stored('giftly-verification-records', {})
+    setUser({ email, name, role: email.includes('admin') ? 'admin' : 'customer', verification: { ...defaultVerification, ...records[email] } })
+  }
+  const updateVerification = (changes) => setUser((current) => current ? { ...current, verification: { ...defaultVerification, ...current.verification, ...changes } } : current)
+  const saveGiftCardVerification = (record) => {
+    const allowedFields = [
+      'id', 'referenceId', 'brand', 'country', 'currency', 'cardType',
+      'maskedCardNumber', 'verificationStatus', 'balanceStatus', 'mockBalance',
+      'cardStatus', 'reason', 'submittedAt', 'verifiedAt', 'riskStatus',
+      'riskFlags', 'detailsVerified',
+    ]
+    const safeRecord = Object.fromEntries(allowedFields.filter((field) => field in record).map((field) => [field, record[field]]))
+    safeRecord.userId = user?.email || ''
+    safeRecord.userName = user?.name || 'Giftly member'
+    setAllGiftCardVerifications((current) => [safeRecord, ...current.filter((item) => item.id !== safeRecord.id)])
+    return safeRecord
+  }
+  const updateGiftCardVerification = (id, changes) => setAllGiftCardVerifications((current) => current.map((record) => record.id === id ? { ...record, ...changes } : record))
+  const giftCardVerifications = allGiftCardVerifications.filter((record) => record.userId === user?.email)
   const logout = () => setUser(null)
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, login, logout, updateVerification, giftCardVerifications, allGiftCardVerifications, saveGiftCardVerification, updateGiftCardVerification }}>{children}</AuthContext.Provider>
 }
 export const useAuth = () => useContext(AuthContext)
