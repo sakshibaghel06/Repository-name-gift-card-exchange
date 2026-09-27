@@ -1,4 +1,5 @@
 import { createEscrow, rollbackEscrowCreation } from './escrowService'
+import { recordLinkedTransaction, SUPPORTED_CURRENCIES } from './walletService'
 
 const STORAGE_KEYS = {
   listings: 'giftly-trading-listings',
@@ -263,7 +264,16 @@ export async function getAdminTradingData() {
 export async function adminUpdateRecord(type, id, changes) {
   const key = type === 'listing' ? STORAGE_KEYS.listings : type === 'auction' ? STORAGE_KEYS.auctions : STORAGE_KEYS.transactions
   const records = read(key)
+  const existing = records.find((record) => record.id === id)
   const updated = records.map((record) => record.id === id ? { ...record, ...changes, updatedAt: new Date().toISOString() } : record)
   write(key, updated)
-  return delay(updated.find((record) => record.id === id) || null)
+  const result = updated.find((record) => record.id === id) || null
+  if (type === 'transaction' && existing?.method === 'instant' && existing.status !== 'COMPLETED' && result?.status === 'COMPLETED' && SUPPORTED_CURRENCIES.some(({ code }) => code === result.currency)) {
+    recordLinkedTransaction({
+      userId: result.userId, type: 'TRADE_CREDIT', currency: result.currency,
+      amount: result.estimatedPayout, status: 'COMPLETED', relatedId: result.transactionId,
+      balanceEffect: 1, description: 'Simulated instant cash-out credit; no real funds were transferred.',
+    })
+  }
+  return delay(result)
 }

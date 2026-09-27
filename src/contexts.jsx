@@ -1,5 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, startTransition, useContext, useEffect, useState } from 'react'
+import {
+  convertCurrency, getTransactions, getWallet, setPreferredCurrency as savePreferredCurrency,
+  simulateDeposit, simulateWithdrawal, WALLET_CHANGE_EVENT,
+} from './services/walletService'
 
 const stored = (key, fallback) => {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -79,3 +83,57 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={{ user, login, logout, updateVerification, giftCardVerifications, allGiftCardVerifications, saveGiftCardVerification, updateGiftCardVerification }}>{children}</AuthContext.Provider>
 }
 export const useAuth = () => useContext(AuthContext)
+
+const WalletContext = createContext(null)
+export function WalletProvider({ children }) {
+  const { user } = useAuth()
+  const [wallet, setWallet] = useState(() => user?.email ? getWallet(user.email) : null)
+  const [loading, setLoading] = useState(false)
+  const [notification, setNotification] = useState('')
+  const currentWallet = wallet?.userId === user?.email ? wallet : null
+
+  const refreshWallet = () => {
+    if (!user?.email) { setWallet(null); setLoading(false); return null }
+    setLoading(true)
+    try {
+      const updated = getWallet(user.email)
+      setWallet(updated)
+      return updated
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    if (!user?.email) return undefined
+    const refresh = () => startTransition(() => {
+      setWallet(getWallet(user.email))
+      setLoading(false)
+    })
+    refresh()
+    window.addEventListener(WALLET_CHANGE_EVENT, refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener(WALLET_CHANGE_EVENT, refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [user?.email])
+
+  const runWalletAction = (action, successMessage) => {
+    try {
+      const result = action()
+      refreshWallet()
+      setNotification(successMessage)
+      return result
+    } catch (error) {
+      setNotification(error.message || 'Wallet error. Please try again.')
+      throw error
+    }
+  }
+  const deposit = (details) => runWalletAction(() => simulateDeposit({ ...details, userId: user?.email }), 'Deposit successful')
+  const withdraw = (details) => runWalletAction(() => simulateWithdrawal({ ...details, userId: user?.email }), 'Withdrawal submitted for prototype processing')
+  const convert = (details) => runWalletAction(() => convertCurrency({ ...details, userId: user?.email }), 'Conversion successful')
+  const setSelectedCurrency = (currency) => runWalletAction(() => savePreferredCurrency(user?.email, currency), 'Default currency updated')
+  const transactions = user?.email ? getTransactions(user.email) : []
+
+  return <WalletContext.Provider value={{ wallet: currentWallet, balances: currentWallet?.balances || {}, selectedCurrency: currentWallet?.preferredCurrency || 'INR', setSelectedCurrency, deposit, withdraw, convert, transactions, refreshWallet, loading, notification, setNotification }}>{children}</WalletContext.Provider>
+}
+export const useWallet = () => useContext(WalletContext)

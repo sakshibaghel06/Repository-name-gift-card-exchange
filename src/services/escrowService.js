@@ -1,3 +1,5 @@
+import { recordLinkedTransaction, SUPPORTED_CURRENCIES } from './walletService'
+
 const ESCROW_KEY = 'giftly-escrows'
 const DISPUTE_KEY = 'giftly-disputes'
 const LISTING_KEY = 'giftly-trading-listings'
@@ -58,6 +60,14 @@ function updateListing(listingId, changes) {
   const listing = listings.find((item) => item.id === listingId)
   if (!listing) throw new Error('Related listing could not be found.')
   write(LISTING_KEY, listings.map((item) => item.id === listingId ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item))
+}
+
+function recordWalletEvent(escrow, userId, type, status, description) {
+  if (!SUPPORTED_CURRENCIES.some(({ code }) => code === escrow.currency)) return
+  recordLinkedTransaction({
+    userId, type, currency: escrow.currency, amount: escrow.amount,
+    status, description, relatedId: escrow.escrowId,
+  })
 }
 
 function markExpiredIfNeeded(escrow) {
@@ -143,6 +153,7 @@ export async function createEscrow({ transaction, listing, buyer }) {
   updateListing(listing.id, { status: 'IN_ESCROW', escrowId: record.escrowId })
   await securePaymentForNewEscrow(record.id)
   await lockCardForNewEscrow(record.id)
+  recordWalletEvent(record, buyer.email, 'ESCROW_HOLD', 'PENDING', 'Simulated escrow hold record; no real funds are held.')
   return delay(findEscrow(record.id))
 }
 
@@ -245,6 +256,7 @@ export async function releaseEscrow(escrowId, actor, { buyerConfirmed = false } 
   updateTransaction(escrow.transactionRecordId, { status: 'COMPLETED', escrowStatus: 'RELEASED', releasedAt: now })
   updateListing(escrow.listingId, { status: 'SOLD', soldAt: now })
   if (escrow.disputeId) updateDisputeStatus(escrow.disputeId, 'RESOLVED_SELLER', actor, now)
+  recordWalletEvent(escrow, escrow.sellerId, 'ESCROW_RELEASE', 'COMPLETED', 'Simulated escrow release ledger entry; no real funds were transferred.')
   return delay(updated)
 }
 
@@ -336,6 +348,7 @@ export async function resolveDispute(escrowId, actor, outcome) {
   updateTransaction(escrow.transactionRecordId, { status: 'REFUNDED', paymentStatus: 'REFUNDED', disputeStatus: 'RESOLVED_BUYER', resolvedAt: now })
   updateListing(escrow.listingId, { status: 'ACTIVE', escrowId: null, cardReturnedAvailable: true })
   updateDisputeStatus(escrow.disputeId, 'RESOLVED_BUYER', actor, now)
+  recordWalletEvent(escrow, escrow.buyerId, 'REFUND', 'COMPLETED', 'Simulated buyer refund record; no real funds were transferred.')
   return delay(updated)
 }
 
@@ -349,6 +362,7 @@ export async function refundEscrow(escrowId, actor) {
   updateTransaction(escrow.transactionRecordId, { status: 'REFUNDED', paymentStatus: 'REFUNDED', disputeStatus: updated.disputeStatus, resolvedAt: now })
   updateListing(escrow.listingId, { status: 'ACTIVE', escrowId: null, cardReturnedAvailable: true })
   if (escrow.disputeId) updateDisputeStatus(escrow.disputeId, 'RESOLVED_BUYER', actor, now)
+  recordWalletEvent(escrow, escrow.buyerId, 'REFUND', 'COMPLETED', 'Simulated buyer refund record; no real funds were transferred.')
   return delay(updated)
 }
 
@@ -369,6 +383,7 @@ export async function cancelEscrow(escrowId, actor) {
   saveEscrow(updated)
   updateTransaction(escrow.transactionRecordId, { status: 'CANCELLED', paymentStatus: updated.paymentStatus })
   updateListing(escrow.listingId, { status: 'CANCELLED', escrowId: null, cardReturnedAvailable: true })
+  if (escrow.paymentStatus === 'SIMULATED_PAID') recordWalletEvent(escrow, escrow.buyerId, 'REFUND', 'COMPLETED', 'Simulated escrow cancellation refund record; no real funds were transferred.')
   return delay(updated)
 }
 
