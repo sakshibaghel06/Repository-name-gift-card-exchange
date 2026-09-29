@@ -7,6 +7,8 @@ import {
   getEscrow, getUserEscrows, openDispute, resolveDisputeRecord,
   setDisputeUnderReview,
 } from './services/escrowService'
+import { createDelivery, getDeliveryByEscrow } from './services/deliveryService'
+import { createNotification } from './services/notificationService'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Check, CheckCircle2,
   ChevronRight, Clock3, FileText, Gift, Info, LockKeyhole, MessageSquareWarning,
@@ -105,13 +107,21 @@ export function EscrowDetailPage() {
   const isBuyer = user?.email === escrow?.buyerId
   const isSeller = user?.email === escrow?.sellerId
   const showSafeCard = isBuyer && ['DELIVERED', 'CONFIRMED'].includes(escrow?.deliveryStatus)
+  const deliveryRecord = escrow ? getDeliveryByEscrow(escrow.id) : null
 
   useEffect(() => {
     let active = true
     const refresh = async () => {
       try {
         const nextEscrow = await getEscrow(escrowId, user)
-        if (active) { setEscrow(nextEscrow); setError('') }
+        if (active) {
+          setEscrow(nextEscrow)
+          setError('')
+          if (nextEscrow?.deliveryStatus === 'DELIVERED' && nextEscrow.status === 'BUYER_REVIEW' && user.email === nextEscrow.sellerId && !getDeliveryByEscrow(nextEscrow.id)) {
+            const delivery = createDelivery(nextEscrow, user)
+            createNotification({ userId: nextEscrow.buyerId, type: 'DELIVERY', title: 'Gift-card delivery is ready', message: `${nextEscrow.brand} delivery is available in the prototype.`, relatedId: delivery.id, relatedType: 'DELIVERY', href: `/delivery/${delivery.id}`, dedupeKey: `delivery-ready:${delivery.id}` })
+          }
+        }
       } catch (issue) { if (active) setError(issue.message) }
       if (active) setReady(true)
     }
@@ -127,6 +137,11 @@ export function EscrowDetailPage() {
       if (updated?.id === escrow?.id || updated?.escrowId === escrow?.escrowId) setEscrow(updated)
       else setEscrow(await getEscrow(escrowId, user))
       setNotice(action)
+      if (action === 'Dispute Submitted' && updated?.sellerId) createNotification({ userId: updated.sellerId, type: 'DISPUTE', title: 'A prototype dispute was opened', message: `A buyer opened a dispute for ${updated.brand || escrow?.brand || 'a transaction'}.`, relatedId: updated.id, relatedType: 'DISPUTE', href: '/admin/disputes', dedupeKey: `dispute-opened:${updated.id}` })
+      if (['RELEASED', 'RESOLVED'].includes(updated?.status)) {
+        const record = escrow
+        for (const userId of [record?.buyerId, record?.sellerId].filter(Boolean)) createNotification({ userId, type: 'ESCROW', title: 'Prototype escrow status updated', message: `The ${record.brand} escrow is now ${updated.status}. No real funds were transferred.`, relatedId: updated.id, relatedType: 'ESCROW', href: `/escrow/${updated.id}`, dedupeKey: `escrow-final:${updated.id}:${updated.status}:${userId}` })
+      }
       setDisputeOpen(false)
       setConfirmOpen(false)
       setAdminAction(null)
@@ -137,7 +152,11 @@ export function EscrowDetailPage() {
 
   const submitDispute = async (event) => {
     event.preventDefault()
-    await runAction('Dispute Submitted', () => openDispute({ escrowId, buyer: user, reason: problem, description, evidence }))
+    await runAction('Dispute Submitted', async () => {
+      const dispute = await openDispute({ escrowId, buyer: user, reason: problem, description, evidence })
+      createNotification({ userId: user.email, type: 'DISPUTE', title: 'Prototype dispute opened', message: `Your ${dispute.brand} dispute is recorded for review.`, relatedId: dispute.id, relatedType: 'DISPUTE', href: `/disputes/${dispute.id}`, dedupeKey: `dispute-buyer:${dispute.id}` })
+      return dispute
+    })
   }
 
   const completeAdminAction = async (note) => {
@@ -158,9 +177,10 @@ export function EscrowDetailPage() {
   return <main className="page escrow-page"><Link className="back-link" to={isAdmin ? '/admin/escrow' : '/my-escrows'}><ArrowLeft size={15} /> {isAdmin ? 'Escrow dashboard' : 'My Escrows'}</Link><PageHeader eyebrow={`Escrow · ${escrow.escrowId}`} title={statusTitle} text="Prototype escrow workflow. No real funds are held or transferred by this prototype." action={<EscrowStatus value={escrow.status} />} />
     <div className="escrow-main-layout"><div className="escrow-main-column"><section className="escrow-panel"><div className="escrow-panel-heading"><span><LockKeyhole size={18} /></span><div><b>Escrow overview</b><small>{escrow.status === 'FUNDS_SECURED' ? 'Funds Secured · simulated payment' : `Current stage · ${escrow.status.replaceAll('_', ' ')}`}</small></div><EscrowStatus value={escrow.status} /></div><EscrowTimeline escrow={escrow} /><PrototypeNotice>No real funds are held or transferred by this prototype. The simulated payment status does not represent money custody.</PrototypeNotice></section>
       <section className="escrow-panel"><h2>Transaction information</h2><DetailGrid escrow={escrow} /><div className="escrow-status-grid"><div><span>Payment status</span><b>{escrow.paymentStatus.replaceAll('_', ' ')}</b></div><div><span>Card status</span><b>{escrow.cardStatus}</b></div><div><span>Delivery status</span><b>{escrow.deliveryStatus}</b></div><div><span>Buyer confirmation</span><b>{escrow.buyerConfirmation}</b></div><div><span>Dispute status</span><b>{escrow.disputeStatus.replaceAll('_', ' ')}</b></div><div><span>Expires</span><b>{dateTime(escrow.expiresAt)}</b></div></div></section>
-      {escrow.cardStatus === 'LOCKED' && isSeller && <section className="escrow-locked-panel"><span><LockKeyhole size={22} /></span><div><h2>Your gift card is locked while this transaction is in escrow.</h2><p>The gift card code remains hidden. Mark delivery only after completing your prototype handoff.</p>{escrow.deliveryStatus === 'PENDING' && <button className="button primary" disabled={busy} onClick={() => runAction('Gift Card Delivered', () => deliverGiftCard(escrow.id, user))}><PackageCheck size={16} /> Deliver Gift Card</button>}</div></section>}
+      {escrow.cardStatus === 'LOCKED' && isSeller && <section className="escrow-locked-panel"><span><LockKeyhole size={22} /></span><div><h2>Your gift card is locked while this transaction is in escrow.</h2><p>The gift card code remains hidden. Mark delivery only after completing your prototype handoff.</p>{escrow.deliveryStatus === 'PENDING' && <button className="button primary" disabled={busy} onClick={() => runAction('Gift Card Delivered', async () => { const updated = await deliverGiftCard(escrow.id, user); const delivery = createDelivery(updated, user); createNotification({ userId: updated.buyerId, type: 'DELIVERY', title: 'Gift-card delivery is ready', message: `${updated.brand} delivery is available in the prototype.`, relatedId: delivery.id, relatedType: 'DELIVERY', href: `/delivery/${delivery.id}`, dedupeKey: `delivery-ready:${delivery.id}` }); return updated })}><PackageCheck size={16} /> Deliver Gift Card</button>}</div></section>}
       {isSeller && escrow.cardStatus === 'LOCKED' && escrow.deliveryStatus === 'PENDING' && <div className="escrow-seller-protection"><ShieldCheck size={17} /><span><b>Your Gift Card Is Protected</b><small>{escrow.brand} · {money(escrow.currency, escrow.faceValue)} balance · Selling price {money(escrow.currency, escrow.amount)}</small><small>Escrow status: Funds Secured · Card status: Locked · Payment status: Simulated Paid</small></span></div>}
       {isSeller && escrow.deliveryStatus === 'DELIVERED' && <div className="escrow-seller-protection"><CheckCircle2 size={17} /><span><b>Gift Card Delivered</b><small>Waiting for the buyer's prototype verification.</small></span></div>}
+        {deliveryRecord && (isBuyer || isSeller) && <div className="escrow-seller-protection"><PackageCheck size={17} /><span><b>Delivery record ready</b><small>{deliveryRecord.deliveryId} · simulated in-app, email, and SMS status</small><Link to={`/delivery/${deliveryRecord.id}`}>View delivery record</Link></span></div>}
       {showSafeCard && <div className="escrow-delivery-actions"><p>Gift Card Ready for Verification</p><button className="button outline" onClick={() => setSafeCardOpen((current) => !current)}>{safeCardOpen ? 'Hide Gift Card' : 'View Gift Card'}</button></div>}
       {showSafeCard && safeCardOpen && <section className="escrow-safe-card"><div><span><Gift size={20} /></span><div><p className="eyebrow">Prototype Secure Delivery</p><h2>Gift Card Ready for Verification</h2></div></div><dl><div><dt>Card number</dt><dd>{escrow.maskedCardNumber}</dd></div><div><dt>PIN</dt><dd>••••</dd></div><div><dt>Balance</dt><dd>{money(escrow.currency, escrow.faceValue)}</dd></div><div><dt>Card status</dt><dd>{escrow.cardStatus}</dd></div></dl><PrototypeNotice>This is a simulated display. No actual card code or PIN is available in the prototype.</PrototypeNotice></section>}
       {isBuyer && escrow.deliveryStatus === 'DELIVERED' && escrow.status === 'BUYER_REVIEW' && <div className="escrow-buyer-actions"><button className="button primary" onClick={() => setConfirmOpen(true)}><CheckCircle2 size={16} /> Confirm Gift Card</button><button className="button outline" onClick={() => setDisputeOpen(true)}><MessageSquareWarning size={16} /> Report a Problem</button></div>}

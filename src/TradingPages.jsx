@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from './contexts'
+import { createNotification } from './services/notificationService'
 import {
   adminUpdateRecord, cancelAuction, cancelListing, getActiveAuctions,
   getAdminTradingData, getBidsByAuction, getMarketplaceListings, getMyBids,
@@ -27,7 +28,14 @@ function useTradingSnapshot() {
     const refresh = async () => {
       await Promise.all([getMarketplaceListings(), getActiveAuctions()])
       const all = await getAdminTradingData()
-      if (active) { setData({ listings: all.listings, auctions: all.auctions, transactions: all.transactions }); setReady(true) }
+      if (active) {
+        for (const endedAuction of all.auctions.filter((item) => item.status === 'ENDED' && item.highestBidderId)) {
+          createNotification({ userId: endedAuction.highestBidderId, type: 'AUCTION', title: 'Auction ended with your leading bid', message: `${endedAuction.brand} auction ${endedAuction.id} ended. Settlement remains a prototype workflow.`, relatedId: endedAuction.id, relatedType: 'AUCTION', href: `/auctions/${endedAuction.id}`, dedupeKey: `auction-won:${endedAuction.id}:${endedAuction.highestBidderId}` })
+          createNotification({ userId: endedAuction.sellerId, type: 'AUCTION', title: 'Your auction ended', message: `${endedAuction.brand} auction ${endedAuction.id} ended. Any settlement is simulated.`, relatedId: endedAuction.id, relatedType: 'AUCTION', href: `/my-listings`, dedupeKey: `auction-ended:${endedAuction.id}` })
+        }
+        setData({ listings: all.listings, auctions: all.auctions, transactions: all.transactions })
+        setReady(true)
+      }
     }
     refresh()
     window.addEventListener('giftly-trading-change', refresh)
@@ -81,7 +89,12 @@ export function AuctionDetailPage() {
   const submitBid = async (event) => {
     event.preventDefault(); setError(''); setMessage('')
     if (!user) { navigate('/login'); return }
-    try { await placeBid({ auctionId: auction.id, bidder: user, amount }); setAmount(''); setMessage('Your prototype bid was placed.'); setBids(await getBidsByAuction(auction.id)) } catch (issue) { setError(issue.message) }
+    try {
+      const bid = await placeBid({ auctionId: auction.id, bidder: user, amount })
+      createNotification({ userId: user.email, type: 'AUCTION', title: 'Prototype bid placed', message: `Your bid on ${auction.brand} was recorded in the local auction demo.`, relatedId: auction.id, relatedType: 'AUCTION', href: `/auctions/${auction.id}`, dedupeKey: `bidder:${bid.id}` })
+      createNotification({ userId: auction.sellerId, type: 'AUCTION', title: 'New prototype bid received', message: `A bid was placed on your ${auction.brand} auction.`, relatedId: auction.id, relatedType: 'AUCTION', href: `/auctions/${auction.id}`, dedupeKey: `seller-bid:${bid.id}` })
+      setAmount(''); setMessage('Your prototype bid was placed.'); setBids(await getBidsByAuction(auction.id))
+    } catch (issue) { setError(issue.message) }
   }
   return <main className="page trading-page"><Link className="back-link" to="/auctions"><ArrowLeft size={15} /> Auctions</Link><Header eyebrow={`${auction.status} auction · ${auction.id}`} title={auction.brand} text={`${auction.country} · ${auction.currency}`} /><div className="auction-detail-layout"><section className="trading-panel"><CardSummary record={{ ...auction, mockBalance: auction.faceValue }} /><TrustBadges /><div className="auction-current-bid"><small>Current highest bid</small><b>{money(auction.currency, auction.currentBid)}</b><span>{auction.bidCount} {auction.bidCount === 1 ? 'bid' : 'bids'}</span></div><div className="trading-detail-price"><span>Face value<b>{money(auction.currency, auction.faceValue)}</b></span><span>Starting bid<b>{money(auction.currency, auction.startingBid)}</b></span><span>Minimum next bid<b>{money(auction.currency, nextBid)}</b></span></div><p className="trading-description">{auction.description || 'Verified gift card available for bidding.'}</p><p className="trading-expiry"><CalendarClock size={15} /> {ended ? `Ended ${dateText(auction.endedAt || auction.endsAt)}` : `Ends ${dateText(auction.endsAt)} · ${hoursLeft(auction.endsAt)} hours remaining`}</p>{ended ? <div className="auction-ended-banner"><CheckCircle2 size={18} /><span><b>Auction Ended</b><small>Winning bid: {money(auction.currency, auction.currentBid)} · Winner: {auction.highestBidderId ? `Bidder #${auction.highestBidderId.replace(/[^a-z\d]/gi, '').slice(-4).toUpperCase()}` : 'No bids'} · Seller: Verified Giftly Seller</small><small>Any resulting transaction is Awaiting Settlement. No actual settlement occurred.</small></span></div> : <form className="auction-bid-form" onSubmit={submitBid}><label className="trading-input">Your Bid · minimum {money(auction.currency, nextBid)}<input required type="number" min={nextBid} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(nextBid)} /></label>{error && <p className="trading-error" role="alert">{error}</p>}{message && <p className="trading-success" role="status"><CheckCircle2 size={15} /> {message}</p>}<Notice>Mock bid only. No payment method is charged and no funds are reserved.</Notice><button className="button primary" type="submit"><Gavel size={15} /> Place Bid</button></form>}</section><aside className="trading-panel bid-history"><h2>Bid history</h2>{bids.length ? bids.map((bid) => <div className="bid-history-row" key={bid.id}><span className="bidder-avatar"><span>{bid.bidderLabel.slice(-1)}</span></span><span><b>{bid.bidderLabel}</b><small>{new Date(bid.createdAt).toLocaleString()}</small></span><strong>{money(auction.currency, bid.amount)}</strong></div>) : <p>No bids yet. Place the opening bid when you’re ready.</p>}</aside></div></main>
 }

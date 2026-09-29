@@ -1,19 +1,15 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from './contexts'
+import { COUNTRIES } from './services/countryData'
+import { createNotification } from './services/notificationService'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Check, CheckCircle2, ChevronRight, Circle,
   Clock3, FileCheck2, FileText, Fingerprint, Info, LockKeyhole, Mail, Phone,
   RefreshCw, ShieldCheck, Upload, UserRound, X,
 } from 'lucide-react'
 import './Verification.css'
-
-const countries = [
-  { name: 'India', code: '+91' }, { name: 'United States', code: '+1' },
-  { name: 'United Kingdom', code: '+44' }, { name: 'Canada', code: '+1' },
-  { name: 'Australia', code: '+61' }, { name: 'Singapore', code: '+65' },
-  { name: 'United Arab Emirates', code: '+971' }, { name: 'Germany', code: '+49' },
-]
 
 const adminInitial = [
   { id: 'KYC-1048', name: 'Ananya Sharma', email: 'ananya.s@example.com', country: 'India', level: 'Identity', submittedAt: '24 Sep 2026', status: 'Pending Review', documentType: 'Passport', phone: '+91 ••••• ••482', dob: '12 Mar 1994', address: 'Bandra West, Mumbai, Maharashtra 400050', createdAt: '14 Feb 2025' },
@@ -25,6 +21,8 @@ const adminInitial = [
 function readAdminRecords() {
   try { return JSON.parse(localStorage.getItem('giftly-admin-verifications')) || adminInitial } catch { return adminInitial }
 }
+
+export function getAdminVerificationRecords() { return readAdminRecords() }
 
 function readVerificationRecords() {
   try { return JSON.parse(localStorage.getItem('giftly-verification-records')) || {} } catch { return {} }
@@ -169,7 +167,7 @@ export function VerificationPage() {
         <section className="verification-section" aria-labelledby="phone-verification-title">
           <SectionTitle eyebrow="02 · Phone" title="Verify your phone" detail="We'll send a one-time code to confirm it's you." headingId="phone-verification-title" />
           {verification.phoneVerified ? <div className="verification-success"><CheckCircle2 size={20} /><span><b>Phone verified</b><small>{verification.phoneNumber}</small></span></div> : <>
-            <div className="phone-entry"><label>Country code<select value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{countries.map((item) => <option key={`${item.name}-${item.code}`} value={item.code}>{item.name} ({item.code})</option>)}</select></label><label>Phone number<input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="98765 43210" autoComplete="tel-national" /></label><button type="button" className="button primary" onClick={beginPhoneVerification}><Phone size={16} />{otpSent ? 'Resend code' : 'Send code'}</button></div>
+            <div className="phone-entry"><label>Country code<select value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{COUNTRIES.map((item) => <option key={`${item.name}-${item.phoneCode}`} value={item.phoneCode}>{item.name} ({item.phoneCode})</option>)}</select></label><label>Phone number<input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="98765 43210" autoComplete="tel-national" /></label><button type="button" className="button primary" onClick={beginPhoneVerification}><Phone size={16} />{otpSent ? 'Resend code' : 'Send code'}</button></div>
             {otpSent && <form className="otp-entry" onSubmit={verifyOtp}><label>6-digit verification code<input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="••••••" /></label><button className="button outline" type="submit">Verify number <ArrowRight size={15} /></button><button className="resend-code" type="button" onClick={beginPhoneVerification}><RefreshCw size={13} /> Resend code</button></form>}
             {phoneMessage && <p className={verification.phoneVerified ? 'verification-inline-message success' : 'verification-inline-message'} role="status">{phoneMessage}</p>}
           </>}
@@ -180,7 +178,7 @@ export function VerificationPage() {
           {verification.identityStatus === 'Pending Review' ? <div className="pending-review-panel"><span><Clock3 size={23} /></span><div><b>Pending Review</b><p>Your information was submitted on {new Date(verification.submittedAt).toLocaleDateString()}. We'll update your status here when the review is complete.</p></div><StatusBadge status="Pending Review" /></div> : verification.identityStatus === 'Verified' ? <div className="verified-panel"><BadgeCheck size={28} /><div><b>Identity verified</b><p>Your Giftly profile has been verified. Thanks for helping build trust in the community.</p></div></div> : <>
             <div className="identity-stepper" aria-label="Identity verification steps">{identitySteps.map((label, index) => <div className={step > index + 1 ? 'complete' : step === index + 1 ? 'current' : ''} key={label}><span>{step > index + 1 ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div>
             <form className="identity-form" onSubmit={step === 5 ? submitIdentity : continueIdentity}>
-              {step === 1 && <div className="identity-step-content"><h3>Your legal details</h3><p>Enter these as they appear on your identity document.</p><div className="verification-form-grid"><label className="wide">Full legal name<input required value={identity.fullName || ''} onChange={setIdentityField('fullName')} autoComplete="name" placeholder="As shown on your document" /></label><label>Date of birth<input required type="date" value={identity.dateOfBirth || ''} onChange={setIdentityField('dateOfBirth')} /></label><label>Country<select required value={identity.country || ''} onChange={setIdentityField('country')}><option value="">Select country</option>{countries.map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label className="wide">Address<input required value={identity.address || ''} onChange={setIdentityField('address')} autoComplete="street-address" placeholder="Street address and unit" /></label><label>City<input required value={identity.city || ''} onChange={setIdentityField('city')} autoComplete="address-level2" /></label><label>State / Province<input required value={identity.region || ''} onChange={setIdentityField('region')} autoComplete="address-level1" /></label><label>Postal code<input required value={identity.postalCode || ''} onChange={setIdentityField('postalCode')} autoComplete="postal-code" /></label></div></div>}
+              {step === 1 && <div className="identity-step-content"><h3>Your legal details</h3><p>Enter these as they appear on your identity document.</p><div className="verification-form-grid"><label className="wide">Full legal name<input required value={identity.fullName || ''} onChange={setIdentityField('fullName')} autoComplete="name" placeholder="As shown on your document" /></label><label>Date of birth<input required type="date" value={identity.dateOfBirth || ''} onChange={setIdentityField('dateOfBirth')} /></label><label>Country<select required value={identity.country || ''} onChange={setIdentityField('country')}><option value="">Select country</option>{COUNTRIES.map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label className="wide">Address<input required value={identity.address || ''} onChange={setIdentityField('address')} autoComplete="street-address" placeholder="Street address and unit" /></label><label>City<input required value={identity.city || ''} onChange={setIdentityField('city')} autoComplete="address-level2" /></label><label>State / Province<input required value={identity.region || ''} onChange={setIdentityField('region')} autoComplete="address-level1" /></label><label>Postal code<input required value={identity.postalCode || ''} onChange={setIdentityField('postalCode')} autoComplete="postal-code" /></label></div></div>}
               {step === 2 && <div className="identity-step-content"><h3>Choose an identity document</h3><p>Select a current, government-issued document from your country.</p><div className="document-choice-list">{[['Passport', 'International travel document'], ['National ID', 'Government-issued identity card'], ['Driving Licence', 'Valid photo driving licence']].map(([title, detail]) => <label className={documentType === title ? 'selected' : ''} key={title}><input type="radio" name="documentType" value={title} checked={documentType === title} onChange={() => setDocumentType(title)} /><span className="document-choice-icon"><FileCheck2 size={20} /></span><span><b>{title}</b><small>{detail}</small></span>{documentType === title && <CheckCircle2 size={18} />}</label>)}</div></div>}
               {step === 3 && <div className="identity-step-content"><h3>Upload your document</h3><p>Make sure the full document is visible, legible, and not expired.</p><FileUpload label="Front of document" file={frontFile} onChange={setFrontFile} onRemove={() => setFrontFile(null)} />{documentNeedsBack && <FileUpload label="Back of document" file={backFile} onChange={setBackFile} onRemove={() => setBackFile(null)} />}<div className="verification-note"><Info size={16} /><span>Only an image preview is held in this browser session. This prototype does not send or store real identity documents.</span></div></div>}
               {step === 4 && <div className="identity-step-content"><h3>Take a selfie</h3><p>A clear selfie helps us compare your appearance with your document photo.</p><div className="selfie-placeholder"><span><UserRound size={38} /></span><b>Selfie photo</b><small>Face the camera in good light. Remove hats and sunglasses.</small><label className="button outline"><Upload size={15} />{selfieFile ? 'Replace selfie' : 'Upload selfie'}<input type="file" accept="image/*" onChange={(event) => setSelfieFile(event.target.files?.[0] || null)} /></label>{selfieFile && <small className="selfie-file-name"><CheckCircle2 size={14} /> {selfieFile.name}</small>}</div><div className="verification-instructions"><span><CheckCircle2 size={16} /> Use a plain, well-lit background</span><span><CheckCircle2 size={16} /> Keep your full face in frame</span><span><CheckCircle2 size={16} /> Do not use a photo of a photo</span></div></div>}
@@ -222,6 +220,7 @@ export function AdminVerificationsPage() {
         }
         localStorage.setItem('giftly-verification-records', JSON.stringify(accountRecords))
       }
+      createNotification({ userId: reviewedRecord.email, type: 'VERIFICATION', title: 'Identity review updated', message: `Your prototype identity review status is now ${status}.`, relatedId: id, relatedType: 'VERIFICATION', href: '/verification', dedupeKey: `kyc:${id}:${status}` })
     }
     setNote(status === 'Verified' ? 'Verification approved.' : status === 'Rejected' ? 'Verification rejected.' : 'More information requested.')
   }

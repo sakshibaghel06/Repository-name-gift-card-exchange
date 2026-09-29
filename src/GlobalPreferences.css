@@ -1,0 +1,9 @@
+.region-currency-controls { min-width:0; display:flex; align-items:center; gap:5px; padding:4px; border:1px solid #eee9f2; border-radius:8px; background:#fcfbfd; }
+.global-preference { min-width:0; display:flex; align-items:center; gap:4px; color:#756c81; }
+.global-preference svg { flex:none; color:#725cc0; }
+.global-preference select { min-width:0; max-width:130px; height:28px; padding:0 4px; border:0; outline:0; background:transparent; color:#5a5069; font-size:8px; }
+.currency-symbol { min-width:17px; color:#5e47ba; font-size:10px; font-weight:750; text-align:center; }
+.demo-fx-label { padding:4px 5px; border-radius:4px; background:#f5f0df; color:#88703c; font-size:6px; font-weight:750; white-space:nowrap; }
+@media (max-width:1100px) { .demo-fx-label { display:none; }.global-preference select { max-width:100px; } }
+@media (max-width:900px) { .region-currency-controls { display:none; } }
+@media (max-width:650px) { .nav-links.open .region-currency-controls { display:flex; width:100%; order:10; justify-content:space-between; margin-top:5px; padding:5px 8px; }.nav-links.open .region-currency-controls .global-preference { flex:1; }.nav-links.open .global-preference select { max-width:none; width:100%; font-size:9px; }.nav-links.open .demo-fx-label { display:inline; } }

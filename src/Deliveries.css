@@ -1,0 +1,41 @@
+.deliveries-page { max-width:1180px; }
+.deliveries-heading { margin-bottom:18px; display:flex; align-items:flex-end; justify-content:space-between; gap:15px; }
+.deliveries-heading h1 { margin:8px 0; color:#302354; font-size:35px; line-height:1.12; }
+.deliveries-heading p:last-child { margin:0; color:var(--muted); font-size:11px; line-height:1.6; }
+.deliveries-heading .button { min-height:38px; font-size:9px; }
+.deliveries-prototype-note { margin-bottom:18px; padding:11px 13px; display:flex; align-items:flex-start; gap:9px; border:1px solid #e9dfc7; border-radius:8px; background:#fcf9f1; color:#75633f; font-size:9px; line-height:1.55; }
+.deliveries-prototype-note svg { flex:none; }
+.delivery-record-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.delivery-record-card { min-width:0; padding:16px; border:1px solid var(--line); border-radius:10px; background:#fff; box-shadow:0 4px 14px rgba(42,31,67,.035); transition:transform .18s ease,box-shadow .18s ease; }
+.delivery-record-card:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+.delivery-record-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:13px; }
+.delivery-record-icon { width:34px; height:34px; display:grid; place-items:center; border-radius:8px; background:#f1edf8; color:#6047bf; }
+.deliveries-status { display:inline-flex; align-items:center; padding:5px 8px; border-radius:18px; background:#f0edf4; color:#766d80; font-size:8px; font-weight:750; }
+.deliveries-status.status-delivered,.deliveries-status.status-viewed { background:#eaf5ef; color:#28795d; }
+.deliveries-status.status-pending { background:#fbf4e4; color:#9a742e; }
+.deliveries-status.status-cancelled,.deliveries-status.status-failed { background:#fbefef; color:#a24f58; }
+.delivery-record-card > .eyebrow { color:#7d6aa7; font-size:8px; }
+.delivery-record-card h2 { margin:6px 0 13px; color:#342652; font-size:17px; }
+.delivery-record-card dl { margin:0; display:flex; flex-direction:column; }
+.delivery-record-card dl > div { display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-top:1px solid #f0edf3; }
+.delivery-record-card dt { color:#867d8f; font-size:8px; }
+.delivery-record-card dd { margin:0; color:#493e56; font-size:8px; font-weight:650; text-align:right; overflow-wrap:anywhere; }
+.delivery-record-footer { margin-top:8px; padding-top:11px; display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid #efebf3; }
+.delivery-record-footer > span { color:#817889; font-size:8px; }
+.delivery-record-footer a { display:inline-flex; align-items:center; gap:5px; color:#6148bd; font-size:8px; font-weight:750; white-space:nowrap; }
+.deliveries-state { min-height:235px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:9px; text-align:center; }
+.deliveries-state > span { width:45px; height:45px; display:grid; place-items:center; border-radius:50%; background:#f1edf8; color:#6047bf; }
+.deliveries-state h2 { margin:2px 0; color:#342652; font-size:18px; }
+.deliveries-state p,.deliveries-state small { max-width:400px; margin:0 0 7px; color:var(--muted); font-size:10px; line-height:1.6; }
+.deliveries-state .button { min-height:38px; font-size:9px; }
+.delivery-spinner { width:25px; height:25px; border:2px solid #e8e1f0; border-top-color:#654bc3; border-radius:50%; animation:delivery-spin .75s linear infinite; }
+.deliveries-feedback { margin:0 0 12px; padding:10px 12px; border:1px solid #efdada; border-radius:7px; background:#fff6f5; color:#974f4b; font-size:9px; }
+.deliveries-footnote { display:flex; align-items:center; gap:6px; margin:14px 0 0; color:#8a8290; font-size:8px; }
+@media (max-width:900px) { .delivery-record-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:650px) {
+  .deliveries-page { padding:34px 16px 55px; }
+  .deliveries-heading { align-items:flex-start; flex-direction:column; }
+  .deliveries-heading h1 { font-size:29px; }
+  .delivery-record-grid { grid-template-columns:1fr; }
+  .delivery-record-card { padding:14px; }
+}

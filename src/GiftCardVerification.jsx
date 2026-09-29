@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from './contexts'
+import { COUNTRIES } from './services/countryData'
+import { createNotification } from './services/notificationService'
 import { calculateVerificationRisk, checkGiftCardBalance, maskedNumber, scanGiftCardImage, verifyGiftCardDetails } from './services/giftCardVerification'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Check, CheckCircle2, ChevronRight,
@@ -11,11 +13,7 @@ import {
 import './GiftCardVerification.css'
 
 const steps = ['Card Details', 'Upload Card', 'Verify Details', 'Balance Check', 'Result']
-const countries = [
-  ['India', 'INR'], ['United States', 'USD'], ['United Kingdom', 'GBP'],
-  ['Canada', 'CAD'], ['Australia', 'AUD'], ['Singapore', 'SGD'],
-  ['United Arab Emirates', 'AED'], ['Germany', 'EUR'],
-]
+const countries = COUNTRIES.map(({ name, currency }) => [name, currency])
 const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
 const maxFileSize = 10 * 1024 * 1024
 const emptyDetails = { brand: '', country: 'India', currency: 'INR', cardType: 'Physical Gift Card', cardNumber: '', pin: '', expiry: '', ownership: false }
@@ -163,6 +161,10 @@ export function GiftCardVerificationPage() {
     }
     currentSessionUploads.set(id, { front, back, receipt })
     saveGiftCardVerification(record)
+    if (user?.email) {
+      createNotification({ userId: user.email, type: 'GIFT_CARD', title: `${record.brand} verification result`, message: `Prototype verification result: ${record.verificationStatus}. Reference ${record.referenceId}.`, relatedId: record.id, relatedType: 'GIFT_CARD', href: '/gift-card-verifications', dedupeKey: `gift-card-result:${record.id}` })
+      if (['HIGH RISK', 'MEDIUM RISK'].includes(risk.level)) createNotification({ userId: user.email, type: 'FRAUD', title: 'Prototype risk review flag', message: `The rules-based demo indicator marked ${record.brand} for review. This is not a real fraud decision.`, relatedId: record.id, relatedType: 'GIFT_CARD', href: '/gift-card-verifications', dedupeKey: `risk-flag:${record.id}` })
+    }
     setResult(record)
     setLoading(false)
     setStep(5)

@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  ArrowRight, ArrowUpRight, BadgeCheck, BriefcaseBusiness, ChevronRight,
-  CircleCheck, CircleUserRound, Gift, Globe2, Heart, LayoutDashboard,
-  LockKeyhole, LogOut, Menu, PackageCheck, Search, ShieldCheck, ShoppingBag,
-  Sparkles, Wallet as WalletIcon, X,
+  Activity, ArrowRight, ArrowUpRight, BadgeCheck, BriefcaseBusiness, ChevronRight,
+  Bell, CircleCheck, CircleUserRound, Gift, Globe2, Heart, LayoutDashboard,
+  LockKeyhole, LogOut, Menu, PackageCheck, Search, Settings2, ShieldAlert,
+  ShieldCheck, ShoppingBag, Sparkles, Wallet as WalletIcon, X,
 } from 'lucide-react'
-import { categories, formatINR, giftCards, offers } from './data'
+import { formatINR } from './data'
 import { AuthProvider, CartProvider, WishlistProvider, WalletProvider, useAuth, useCart, useWallet, useWishlist } from './contexts'
 import { VerificationPage, AdminVerificationsPage } from './Verification'
 import { GiftCardVerificationPage, GiftCardVerificationHistoryPage, AdminGiftCardVerificationsPage } from './GiftCardVerification'
@@ -15,11 +15,38 @@ import { AdminTradingPage, AuctionDetailPage, AuctionMarketplacePage, MyBidsPage
 import { AdminDisputesPage, AdminEscrowDashboardPage, DisputeDetailPage, DisputesPage, EscrowActivity, EscrowDetailPage, MyEscrowsPage } from './Escrow'
 import { WalletConvertPage, WalletDepositPage, WalletPage, WalletTransactionDetailPage, WalletTransactionsPage, WalletWithdrawPage } from './Wallet'
 import { AdminWalletPage } from './AdminWallet'
+import { DeliveryPage } from './Delivery'
+import { DeliveriesPage } from './Deliveries'
+import { AdminDeliveriesPage } from './AdminDeliveries'
+import { NotificationsPage, AdminNotificationsPage } from './Notifications'
+import { OperationsPage } from './Operations'
+import { AdminFraudPage, AdminManagementPage } from './AdminManagement'
+import { LegalPage } from './LegalPages'
+import { RegionCurrencyControls } from './GlobalPreferences'
 import { getWalletSummary } from './services/walletService'
+import { getUnreadCount, NOTIFICATION_CHANGE_EVENT } from './services/notificationService'
+import { getPublicCatalog } from './services/adminPrototypeService'
 import heroImage from './assets/hero.png'
 
 function Brand() {
   return <Link className="brand" to="/" aria-label="Giftly Exchange home"><span className="brand-mark"><Gift size={17} /></span><span>Giftly <span>Exchange</span></span></Link>
+}
+
+function NotificationBell() {
+  const { user } = useAuth()
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    const refresh = () => setUnread(user?.email ? getUnreadCount(user.email) : 0)
+    refresh()
+    window.addEventListener(NOTIFICATION_CHANGE_EVENT, refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener(NOTIFICATION_CHANGE_EVENT, refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [user?.email])
+  if (user?.role !== 'customer') return null
+  return <Link className="nav-icon" to="/notifications" aria-label={unread ? `${unread} unread notifications` : 'Notifications'}><Bell size={18} />{unread > 0 && <small>{unread > 9 ? '9+' : unread}</small>}</Link>
 }
 
 function StorefrontLayout() {
@@ -35,11 +62,14 @@ function StorefrontLayout() {
         <NavLink to="/gift-cards" onClick={closeMenu}>Gift Cards</NavLink>
         <NavLink to="/marketplace" onClick={closeMenu}>Marketplace</NavLink>
         <NavLink to="/offers" onClick={closeMenu}>Offers</NavLink>
-        <Link to="/#how-it-works" onClick={closeMenu}>How It Works</Link>
+        <Link to="/how-it-works" onClick={closeMenu}>How It Works</Link>
         <NavLink to="/auctions" onClick={closeMenu}>Auctions</NavLink>
         <NavLink to="/sell-method" onClick={closeMenu}>Sell a Card</NavLink>
+        {user?.role === 'customer' && <NavLink to="/deliveries" onClick={closeMenu}>Deliveries</NavLink>}
+        <RegionCurrencyControls />
       </nav>
       <div className="nav-actions">
+        <NotificationBell />
         <Link className="nav-icon" to="/gift-cards" aria-label="Search gift cards"><Search size={18} /></Link>
         <Link className="nav-icon" to="/wishlist" aria-label="Wishlist"><Heart size={18} /></Link>
         <Link className="nav-icon" to="/cart" aria-label={`Cart with ${cartCount} items`}><ShoppingBag size={19} />{cartCount > 0 && <small>{cartCount}</small>}</Link>
@@ -50,7 +80,7 @@ function StorefrontLayout() {
     </div></header>
     <Outlet />
     <footer className="footer">
-      <div className="footer-main"><div><Brand /><p className="footer-copy">Give More. Save More. Gift Smarter.<br />A gift-card exchange prototype.</p></div><div><b>Explore</b><Link to="/gift-cards">Gift cards</Link><Link to="/marketplace">Marketplace</Link><Link to="/auctions">Auctions</Link></div><div><b>Your account</b><Link to={user ? '/dashboard' : '/login'}>Dashboard</Link><Link to="/wallet">Wallet</Link><Link to="/verification">Verification</Link></div><div><b>Prototype notice</b><p>Payments, verification, and transactions are simulated. No real funds are handled.</p></div></div>
+      <div className="footer-main"><div><Brand /><p className="footer-copy">Give More. Save More. Gift Smarter.<br />A gift-card exchange prototype.</p></div><div><b>Explore</b><Link to="/gift-cards">Gift cards</Link><Link to="/marketplace">Marketplace</Link><Link to="/auctions">Auctions</Link><Link to="/how-it-works">How it works</Link></div><div><b>Your account</b><Link to={user ? '/dashboard' : '/login'}>Dashboard</Link><Link to="/wallet">Wallet</Link><Link to="/verification">Verification</Link><Link to="/notifications">Notifications</Link></div><div><b>Trust & information</b><Link to="/terms">Terms</Link><Link to="/privacy">Privacy</Link><Link to="/compliance">Compliance</Link><Link to="/security">Security</Link><p>Payments, verification, and transactions are simulated.</p></div></div>
       <div className="footer-bottom"><span>© Giftly Exchange · Product prototype</span><span>Give More. Save More. Gift Smarter.</span></div>
     </footer>
   </>
@@ -76,7 +106,18 @@ function ProductGrid({ cards }) {
   return <div className="card-grid">{cards.map((card) => <ProductCard key={card.id} card={card} />)}</div>
 }
 
+function usePrototypeCatalog() {
+  const [catalog, setCatalog] = useState(getPublicCatalog)
+  useEffect(() => {
+    const refresh = () => setCatalog(getPublicCatalog())
+    window.addEventListener('giftly-admin-data-change', refresh)
+    return () => window.removeEventListener('giftly-admin-data-change', refresh)
+  }, [])
+  return catalog
+}
+
 function StoreHome() {
+  const { categories, giftCards, offers } = usePrototypeCatalog()
   return <main className="storefront-home">
     <section className="hero hero-premium">
       <div className="hero-copy">
@@ -102,6 +143,7 @@ function StoreHome() {
 }
 
 function CatalogPage() {
+  const { categories, giftCards } = usePrototypeCatalog()
   const { category } = useParams()
   const [searchParams] = useSearchParams()
   const normalized = decodeURIComponent(category || '').toLowerCase()
@@ -124,10 +166,12 @@ function CatalogPage() {
 }
 
 function OffersPage() {
+  const { offers } = usePrototypeCatalog()
   return <main className="page"><header className="page-header"><p className="eyebrow">Giftly offers</p><h1>Small surprises, extra value</h1><p>Sample offers for the Giftly Exchange prototype.</p></header><div className="offer-grid">{offers.map((offer) => <article className={`offer-card ${offer.color}`} key={offer.id}><span><Sparkles size={19} /></span><p className="eyebrow">Giftly offer</p><h3>{offer.title}</h3><p>{offer.detail}</p><b>{offer.code}</b></article>)}</div><p className="mock-note"><ShieldCheck size={15} /> Offer codes are illustrative and are not connected to checkout.</p></main>
 }
 
 function GiftCardDetailPage() {
+  const { giftCards } = usePrototypeCatalog()
   const { id } = useParams()
   const navigate = useNavigate()
   const card = giftCards.find((item) => item.id === id)
@@ -222,22 +266,19 @@ function AdminLayout() {
   const adminLinks = [
     ['/admin', LayoutDashboard, 'Overview'], ['/admin/verifications', BadgeCheck, 'KYC reviews'],
     ['/admin/gift-card-verifications', Gift, 'Gift card checks'], ['/admin/trading', BriefcaseBusiness, 'Trading'],
-    ['/admin/escrow', ShieldCheck, 'Escrow'], ['/admin/disputes', ShieldCheck, 'Disputes'],
+    ['/admin/escrow', ShieldCheck, 'Escrow'], ['/admin/deliveries', PackageCheck, 'Deliveries'], ['/admin/disputes', ShieldCheck, 'Disputes'],
     ['/admin/wallet', WalletIcon, 'Wallet'],
+    ['/admin/operations', Activity, 'Operations'], ['/admin/notifications', Bell, 'Notifications'],
+    ['/admin/gift-cards', Gift, 'Gift cards'], ['/admin/categories', LayoutDashboard, 'Categories'],
+    ['/admin/orders', ShoppingBag, 'Orders'], ['/admin/users', CircleUserRound, 'Users'],
+    ['/admin/exchanges', ArrowUpRight, 'Exchanges'], ['/admin/offers', Sparkles, 'Offers'],
+    ['/admin/settings', Settings2, 'Settings'], ['/admin/fraud', ShieldAlert, 'Fraud'],
   ]
   return <div className="admin-layout"><aside className="admin-sidebar"><Brand /><span className="admin-label">Operations</span>{adminLinks.map(([href, Icon, label]) => <NavLink end={href === '/admin'} to={href} key={href}><Icon size={16} />{label}</NavLink>)}<Link className="back-store" to="/"><ArrowRight size={15} /> Back to storefront</Link></aside><div className="admin-content"><header className="admin-top"><span>Giftly Exchange · Prototype operations</span><span className="admin-user"><span className="avatar">{user?.name?.slice(0, 1) || 'A'}</span>{user?.name}<button className="admin-signout" onClick={logout}>Sign out</button></span></header><Outlet /></div></div>
 }
 
 function AdminHome() {
-  const adminCards = [
-    ['/admin/verifications', 'Identity Verification', 'Review mock identity submissions'],
-    ['/admin/gift-card-verifications', 'Gift Card Verification', 'Review simulated card checks'],
-    ['/admin/trading', 'Trading', 'Monitor listings, auctions, and transactions'],
-    ['/admin/escrow', 'Escrow', 'Review prototype transaction states'],
-    ['/admin/disputes', 'Disputes', 'Review reported transaction issues'],
-    ['/admin/wallet', 'Wallet', 'View simulated wallet activity'],
-  ]
-  return <main className="admin-page"><div className="admin-heading"><div><p className="eyebrow">Giftly Exchange</p><h1>Operations overview</h1><p className="admin-verification-intro">Prototype workflows only. No real payments, identity checks, or escrow custody are connected.</p></div><span className="admin-prototype-label"><ShieldCheck size={14} /> Demo environment</span></div><div className="stats-grid">{adminCards.map(([href, title, text]) => <Link className="stat-card admin-quick-card" to={href} key={href}><span><ArrowRight size={17} /></span><b>{title}</b><small>{text}</small></Link>)}</div></main>
+  return <OperationsPage master />
 }
 
 function NotFoundPage() {
@@ -259,6 +300,11 @@ function ApplicationRoutes() {
       <Route path="login" element={<LoginPage />} />
       <Route path="register" element={<LoginPage />} />
       <Route path="support" element={<SupportPage />} />
+      <Route path="terms" element={<LegalPage page="terms" />} />
+      <Route path="privacy" element={<LegalPage page="privacy" />} />
+      <Route path="compliance" element={<LegalPage page="compliance" />} />
+      <Route path="security" element={<LegalPage page="security" />} />
+      <Route path="how-it-works" element={<LegalPage page="how-it-works" />} />
       <Route path="cart" element={<CartPage />} />
       <Route path="sell-gift-card" element={<LegacySellRoute />} />
       <Route element={<RequireCustomer />}>
@@ -278,6 +324,9 @@ function ApplicationRoutes() {
         <Route path="transactions/:id" element={<TransactionDetailPage />} />
         <Route path="my-escrows" element={<MyEscrowsPage />} />
         <Route path="escrow/:escrowId" element={<EscrowDetailPage />} />
+        <Route path="deliveries" element={<DeliveriesPage />} />
+        <Route path="delivery/:deliveryId" element={<DeliveryPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
         <Route path="disputes" element={<DisputesPage />} />
         <Route path="disputes/:id" element={<DisputeDetailPage />} />
         <Route path="wallet" element={<WalletPage />} />
@@ -291,11 +340,22 @@ function ApplicationRoutes() {
     <Route element={<RequireAdmin />}>
       <Route path="admin" element={<AdminLayout />}>
         <Route index element={<AdminHome />} />
+        <Route path="operations" element={<OperationsPage />} />
+        <Route path="notifications" element={<AdminNotificationsPage />} />
+        <Route path="gift-cards" element={<AdminManagementPage key="gift-cards" section="gift-cards" />} />
+        <Route path="categories" element={<AdminManagementPage key="categories" section="categories" />} />
+        <Route path="orders" element={<AdminManagementPage key="orders" section="orders" />} />
+        <Route path="users" element={<AdminManagementPage key="users" section="users" />} />
+        <Route path="exchanges" element={<AdminManagementPage key="exchanges" section="exchanges" />} />
+        <Route path="offers" element={<AdminManagementPage key="offers" section="offers" />} />
+        <Route path="settings" element={<AdminManagementPage key="settings" section="settings" />} />
+        <Route path="fraud" element={<AdminFraudPage />} />
         <Route path="verifications" element={<AdminVerificationsPage />} />
         <Route path="gift-card-verifications" element={<AdminGiftCardVerificationsPage />} />
         <Route path="trading" element={<AdminTradingPage />} />
         <Route path="escrow" element={<AdminEscrowDashboardPage />} />
         <Route path="escrow/:escrowId" element={<EscrowDetailPage />} />
+        <Route path="deliveries" element={<AdminDeliveriesPage />} />
         <Route path="disputes" element={<AdminDisputesPage />} />
         <Route path="wallet" element={<AdminWalletPage />} />
       </Route>

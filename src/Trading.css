@@ -85,6 +85,8 @@
 .trading-preview-facts b { display: inline-flex; align-items: center; gap: 4px; color: #414047; font-size: 9px; text-align: right; }
 .trading-preview-facts b svg { color: #4c805a; }
 .seller-verified { display: inline-flex; align-items: center; gap: 4px; color: #3e7750; font-size: 8px; font-weight: 700; }
+.trading-region-match { margin: -4px 0 8px; display: inline-flex; align-items: center; gap: 4px; color: #6047bf; font-size: 8px; font-weight: 700; }
+.trading-region-match { margin: -4px 0 8px; display: inline-flex; align-items: center; gap: 4px; color: #6047bf; font-size: 8px; font-weight: 700; }
 .trading-market-toolbar { margin: 17px 0 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; color: #77717a; font-size: 10px; }
 .trading-market-toolbar b { color: #37343b; }
 .trading-market-toolbar label { display: inline-flex; align-items: center; gap: 7px; }

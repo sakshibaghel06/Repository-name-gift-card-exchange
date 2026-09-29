@@ -4,6 +4,7 @@ import {
   convertCurrency, getTransactions, getWallet, setPreferredCurrency as savePreferredCurrency,
   simulateDeposit, simulateWithdrawal, WALLET_CHANGE_EVENT,
 } from './services/walletService'
+import { createNotification } from './services/notificationService'
 
 const stored = (key, fallback) => {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -117,20 +118,25 @@ export function WalletProvider({ children }) {
     }
   }, [user?.email])
 
-  const runWalletAction = (action, successMessage) => {
+  const runWalletAction = (action, successMessage, notificationTitle = '') => {
     try {
       const result = action()
       refreshWallet()
       setNotification(successMessage)
+      if (notificationTitle && user?.email && result?.id) createNotification({
+        userId: user.email, type: 'WALLET', title: notificationTitle,
+        message: result.description || successMessage,
+        relatedId: result.id, relatedType: 'WALLET', href: `/wallet/transactions/${result.id}`,
+      })
       return result
     } catch (error) {
       setNotification(error.message || 'Wallet error. Please try again.')
       throw error
     }
   }
-  const deposit = (details) => runWalletAction(() => simulateDeposit({ ...details, userId: user?.email }), 'Deposit successful')
-  const withdraw = (details) => runWalletAction(() => simulateWithdrawal({ ...details, userId: user?.email }), 'Withdrawal submitted for prototype processing')
-  const convert = (details) => runWalletAction(() => convertCurrency({ ...details, userId: user?.email }), 'Conversion successful')
+  const deposit = (details) => runWalletAction(() => simulateDeposit({ ...details, userId: user?.email }), 'Deposit successful', 'Demo deposit recorded')
+  const withdraw = (details) => runWalletAction(() => simulateWithdrawal({ ...details, userId: user?.email }), 'Withdrawal submitted for prototype processing', 'Demo withdrawal requested')
+  const convert = (details) => runWalletAction(() => convertCurrency({ ...details, userId: user?.email }), 'Conversion successful', 'Demo currency conversion recorded')
   const setSelectedCurrency = (currency) => runWalletAction(() => savePreferredCurrency(user?.email, currency), 'Default currency updated')
   const transactions = user?.email ? getTransactions(user.email) : []
 
