@@ -1,140 +1,311 @@
 import { useState } from 'react'
-import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import * as Icons from 'lucide-react'
-import { categories, formatINR, giftCards, mockExchanges, mockOrders, offers } from './data'
-import { AuthProvider, CartProvider, useAuth, useCart, useWallet, useWishlist, WalletProvider, WishlistProvider } from './contexts'
-import { AdminVerificationsPage, VerificationPage } from './Verification'
-import { AdminGiftCardVerificationsPage, GiftCardVerificationHistoryPage, GiftCardVerificationPage } from './GiftCardVerification'
-import { InstantCashoutPage, AuctionCreatePage, ListingDetailPage, MarketplaceListingsPage, P2PCreatePage, SellMethodPage } from './Trading'
+import { BrowserRouter, Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import {
+  ArrowRight, ArrowUpRight, BadgeCheck, BriefcaseBusiness, ChevronRight,
+  CircleCheck, CircleUserRound, Gift, Globe2, Heart, LayoutDashboard,
+  LockKeyhole, LogOut, Menu, PackageCheck, Search, ShieldCheck, ShoppingBag,
+  Sparkles, Wallet as WalletIcon, X,
+} from 'lucide-react'
+import { categories, formatINR, giftCards, offers } from './data'
+import { AuthProvider, CartProvider, WishlistProvider, WalletProvider, useAuth, useCart, useWallet, useWishlist } from './contexts'
+import { VerificationPage, AdminVerificationsPage } from './Verification'
+import { GiftCardVerificationPage, GiftCardVerificationHistoryPage, AdminGiftCardVerificationsPage } from './GiftCardVerification'
+import { AuctionCreatePage, InstantCashoutPage, ListingDetailPage, MarketplaceListingsPage, P2PCreatePage, SellMethodPage } from './Trading'
 import { AdminTradingPage, AuctionDetailPage, AuctionMarketplacePage, MyBidsPage, MyListingsPage, TradingActivity, TransactionDetailPage, TransactionsPage } from './TradingPages'
 import { AdminDisputesPage, AdminEscrowDashboardPage, DisputeDetailPage, DisputesPage, EscrowActivity, EscrowDetailPage, MyEscrowsPage } from './Escrow'
 import { WalletConvertPage, WalletDepositPage, WalletPage, WalletTransactionDetailPage, WalletTransactionsPage, WalletWithdrawPage } from './Wallet'
 import { AdminWalletPage } from './AdminWallet'
 import { getWalletSummary } from './services/walletService'
-import './App.css'
+import heroImage from './assets/hero.png'
 
-const Icon = ({ name, size = 18 }) => { const Component = Icons[name] || Icons.Gift; return <Component size={size} strokeWidth={1.8} /> }
-const Button = ({ children, variant = 'primary', ...props }) => <button className={`button ${variant}`} {...props}>{children}</button>
-const Badge = ({ children }) => <span className="badge">{children}</span>
-const Rating = ({ value }) => <span className="rating"><Icon name="Star" size={14} /> {value}</span>
+function Brand() {
+  return <Link className="brand" to="/" aria-label="Giftly Exchange home"><span className="brand-mark"><Gift size={17} /></span><span>Giftly <span>Exchange</span></span></Link>
+}
 
-function Navbar() {
-  const { cart } = useCart(); const { wishlist } = useWishlist(); const { user, logout } = useAuth(); const [open, setOpen] = useState(false)
-  const links = [['/', 'Home'], ['/gift-cards', 'Gift Cards'], ['/marketplace', 'P2P Marketplace'], ['/auctions', 'Auctions'], ['/offers', 'Offers'], ['/sell-gift-card', 'Sell Gift Card'], ...(user ? [['/wallet', 'Wallet']] : [])]
-  return <header className="navbar"><div className="nav-inner"><Link className="brand" to="/"><span className="brand-mark"><Icon name="Sparkles" size={18} /></span><span>giftly<span>exchange</span></span></Link><nav className={open ? 'nav-links open' : 'nav-links'}>{links.map(([to, label]) => <NavLink key={to} to={to} onClick={() => setOpen(false)}>{label}</NavLink>)}<NavLink to="/categories/Shopping" onClick={() => setOpen(false)}>Categories</NavLink></nav><div className="nav-actions"><Link className="nav-icon" to="/gift-cards" title="Search"><Icon name="Search" /></Link><Link className="nav-icon" to="/wishlist" title="Wishlist"><Icon name="Heart" /><small>{wishlist.length}</small></Link><Link className="nav-icon" to="/cart" title="Cart"><Icon name="ShoppingBag" /><small>{cart.length}</small></Link>{user ? <button className="avatar" onClick={logout} title="Sign out">{user.name.charAt(0)}</button> : <Link className="login-link" to="/login">Sign in</Link>}<button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Toggle menu"><Icon name={open ? 'X' : 'Menu'} /></button></div></div></header>
+function StorefrontLayout() {
+  const { user, logout } = useAuth()
+  const { cart } = useCart()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const closeMenu = () => setMenuOpen(false)
+  const cartCount = cart.reduce((count, item) => count + item.quantity, 0)
+  return <>
+    <header className="navbar"><div className="nav-inner">
+      <Brand />
+      <nav className={`nav-links ${menuOpen ? 'open' : ''}`} aria-label="Main navigation">
+        <NavLink to="/gift-cards" onClick={closeMenu}>Gift Cards</NavLink>
+        <NavLink to="/marketplace" onClick={closeMenu}>Marketplace</NavLink>
+        <NavLink to="/offers" onClick={closeMenu}>Offers</NavLink>
+        <Link to="/#how-it-works" onClick={closeMenu}>How It Works</Link>
+        <NavLink to="/auctions" onClick={closeMenu}>Auctions</NavLink>
+        <NavLink to="/sell-method" onClick={closeMenu}>Sell a Card</NavLink>
+      </nav>
+      <div className="nav-actions">
+        <Link className="nav-icon" to="/gift-cards" aria-label="Search gift cards"><Search size={18} /></Link>
+        <Link className="nav-icon" to="/wishlist" aria-label="Wishlist"><Heart size={18} /></Link>
+        <Link className="nav-icon" to="/cart" aria-label={`Cart with ${cartCount} items`}><ShoppingBag size={19} />{cartCount > 0 && <small>{cartCount}</small>}</Link>
+        <Link className="nav-icon" to={user ? user.role === 'admin' ? '/admin' : '/dashboard' : '/login'} aria-label={user ? user.role === 'admin' ? 'Admin account' : 'Your account' : 'Sign in'}><CircleUserRound size={19} /></Link>
+        {user ? <button className="login-link" onClick={logout}><LogOut size={15} /><span>Sign out</span></button> : <Link className="login-link" to="/login">Sign in</Link>}
+        <button className="mobile-menu" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close menu' : 'Open menu'}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
+      </div>
+    </div></header>
+    <Outlet />
+    <footer className="footer">
+      <div className="footer-main"><div><Brand /><p className="footer-copy">Give More. Save More. Gift Smarter.<br />A gift-card exchange prototype.</p></div><div><b>Explore</b><Link to="/gift-cards">Gift cards</Link><Link to="/marketplace">Marketplace</Link><Link to="/auctions">Auctions</Link></div><div><b>Your account</b><Link to={user ? '/dashboard' : '/login'}>Dashboard</Link><Link to="/wallet">Wallet</Link><Link to="/verification">Verification</Link></div><div><b>Prototype notice</b><p>Payments, verification, and transactions are simulated. No real funds are handled.</p></div></div>
+      <div className="footer-bottom"><span>© Giftly Exchange · Product prototype</span><span>Give More. Save More. Gift Smarter.</span></div>
+    </footer>
+  </>
 }
-function Footer() { return <footer><div className="footer-main"><div><Link className="brand" to="/"><span className="brand-mark"><Icon name="Sparkles" size={18} /></span><span>giftly<span>exchange</span></span></Link><p className="footer-copy">Thoughtful gifting, made a little smarter.</p></div><div><b>Explore</b><Link to="/gift-cards">Gift cards</Link><Link to="/offers">Offers</Link><Link to="/sell-gift-card">Sell a card</Link></div><div><b>Company</b><Link to="/about">About us</Link><Link to="/support">Support centre</Link><Link to="/contact">Contact</Link></div><div><b>Get in touch</b><p>hello@giftly.exchange</p><p>Mon–Sat, 9am–7pm</p><div className="socials"><Icon name="Instagram" /><Icon name="Twitter" /><Icon name="Linkedin" /></div></div></div><div className="footer-bottom"><span>© 2024 Giftly Exchange</span><span>Made for better gifting in India <span className="gold">✦</span></span></div></footer> }
-function PageHeader({ eyebrow, title, text }) { return <div className="page-header"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1>{text && <p>{text}</p>}</div> }
-function CategoryCard({ category }) { return <Link className="category-card" to={`/categories/${category.name}`} style={{ '--category-bg': category.color, '--category-accent': category.accent }}><span className="category-icon"><Icon name={category.icon} size={22} /></span><span><b>{category.name}</b><small>{category.count} cards</small></span><Icon name="ArrowUpRight" size={17} /></Link> }
-function GiftCardCard({ card }) { const { wishlist, toggleWishlist } = useWishlist(); const { addToCart } = useCart(); const liked = wishlist.some((item) => item.id === card.id); const price = card.value * (1 - card.discount / 100); return <article className="gift-card"><div className="gift-visual" style={{ background: card.color }}><span className="gift-logo" style={{ background: card.accent }}>{card.logo}</span><span className="gift-brand">{card.brand}</span><button className={liked ? 'wish active' : 'wish'} onClick={() => toggleWishlist(card)} aria-label="Toggle wishlist"><Icon name="Heart" size={18} fill={liked ? 'currentColor' : 'none'} /></button><span className="gift-ribbon">-{card.discount}%</span></div><div className="gift-info"><div className="card-meta"><span>{card.category}</span><Rating value={card.rating} /></div><Link to={`/gift-cards/${card.id}`}><h3>{card.name}</h3></Link><div className="price-row"><span className="price">{formatINR(price)}</span><del>{formatINR(card.value)}</del><Button variant="tiny" onClick={() => addToCart(card)}><Icon name="Plus" size={15} /> Add</Button></div></div></article> }
-function SearchBar({ initial = '' }) { const navigate = useNavigate(); const [query, setQuery] = useState(initial); return <form className="search-bar" onSubmit={(event) => { event.preventDefault(); navigate(`/gift-cards${query ? `?search=${query}` : ''}`) }}><Icon name="Search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search for a brand, card or category" /><button aria-label="Search"><Icon name="ArrowRight" /></button></form> }
 
-function Home() { return <><section className="hero"><div className="hero-copy"><Badge>India's smarter gifting marketplace</Badge><h1>Give more.<br /><em>Save more.</em><br />Gift smarter.</h1><p>Discover handpicked gift cards from the brands you love, at prices you'll love even more.</p><SearchBar /><div className="hero-proof"><span><b>4.8/5</b> customer rating</span><span><b>50k+</b> happy gifters</span><span><b>Instant</b> delivery</span></div></div><div className="hero-art"><div className="sun"></div><div className="hero-card card-one"><span>amazon</span><b>₹2,000</b><small>GIFT CARD</small></div><div className="hero-card card-two"><span>swiggy</span><b>₹1,000</b><small>GIFT CARD</small></div><div className="hero-orbit orbit-one"></div><div className="hero-orbit orbit-two"></div><span className="sparkle s1">✦</span><span className="sparkle s2">✦</span></div></section><section className="section"><div className="section-heading"><div><p className="eyebrow">Curated for you</p><h2>Shop by category</h2></div><Link className="text-link" to="/gift-cards">View all categories <Icon name="ArrowUpRight" size={16} /></Link></div><div className="category-grid">{categories.slice(0, 6).map((category) => <CategoryCard key={category.name} category={category} />)}</div></section><section className="section tinted"><div className="section-heading"><div><p className="eyebrow">The good stuff</p><h2>Popular gift cards</h2></div><Link className="text-link" to="/gift-cards">Browse marketplace <Icon name="ArrowUpRight" size={16} /></Link></div><div className="card-grid">{giftCards.slice(0, 4).map((card) => <GiftCardCard key={card.id} card={card} />)}</div></section><section className="section how-section"><div className="section-heading center"><p className="eyebrow">Simple by design</p><h2>Gift better in three steps</h2></div><div className="steps"><div className="step"><span>01</span><Icon name="Search" /><h3>Find their favourite</h3><p>Browse hundreds of popular brands and discover a gift that feels just right.</p></div><div className="step"><span>02</span><Icon name="BadgePercent" /><h3>Save while you shop</h3><p>Every card is thoughtfully priced below face value, so your gift goes further.</p></div><div className="step"><span>03</span><Icon name="Send" /><h3>Send instantly</h3><p>Choose your denomination and deliver a little happiness straight to their inbox.</p></div></div></section><section className="sell-banner"><div><p className="eyebrow">Have a card you won't use?</p><h2>Turn unused gifts<br /><em>into something useful.</em></h2><p>Sell your gift cards securely and get paid straight to your account.</p><Link className="button primary" to="/sell-gift-card">Sell a gift card <Icon name="ArrowUpRight" size={17} /></Link></div><div className="sell-art"><Icon name="RefreshCw" size={112} /></div></section><section className="section testimonials"><div className="section-heading center"><p className="eyebrow">The Giftly feeling</p><h2>Loved by thoughtful gifters</h2></div><div className="testimonial-grid"><blockquote>“Giftly has made gifting my team so much easier. The cards arrive instantly and everyone gets to pick what they actually want.”<footer><b>Rhea Kapoor</b><small>People Ops, Mumbai</small></footer></blockquote><blockquote>“I saved ₹900 on my last round of festive shopping. It feels good to give well without overspending.”<footer><b>Vikram Nair</b><small>Frequent gifter, Bengaluru</small></footer></blockquote><blockquote>“The whole experience feels considered, from browsing to delivery. This is my new gifting shortcut.”<footer><b>Meera Shah</b><small>Designer, Pune</small></footer></blockquote></div></section><Newsletter /></> }
-function Newsletter() { return <section className="newsletter"><div><p className="eyebrow">A little something good</p><h2>Gifting inspiration,<br /><em>delivered.</em></h2></div><form onSubmit={(event) => event.preventDefault()}><input type="email" placeholder="Your email address" aria-label="Email address" /><Button>Join the list <Icon name="ArrowRight" size={16} /></Button><small>No spam. Just great gifts and better deals.</small></form></section> }
+function ProductCard({ card }) {
+  const { addToCart } = useCart()
+  const { toggleWishlist, wishlist } = useWishlist()
+  const [added, setAdded] = useState(false)
+  const saved = wishlist.some((item) => item.id === card.id)
+  return <article className="gift-card">
+    <div className="gift-card-art-wrap">
+      <Link to={`/gift-cards/${card.id}`} className="gift-visual" style={{ background: card.color, color: card.accent }}>
+        <span className="gift-logo" style={{ background: card.accent }}>{card.logo}</span><span>{card.brand}</span><small className="gift-discount">Save {card.discount}%</small>
+      </Link>
+      <button className={`product-wishlist ${saved ? 'saved' : ''}`} onClick={() => toggleWishlist(card)} aria-label={saved ? `Remove ${card.name} from wishlist` : `Add ${card.name} to wishlist`}><Heart size={17} fill={saved ? 'currentColor' : 'none'} /></button>
+    </div>
+    <div className="gift-info"><div className="product-meta"><span>{card.category}</span><span aria-label={`${card.rating} out of 5 stars`}>★ {card.rating}</span></div><Link to={`/gift-cards/${card.id}`}><h3>{card.name}</h3></Link><div className="product-price"><b>{formatINR(Math.round(card.value * (1 - card.discount / 100)))}</b><del>{formatINR(card.value)}</del></div><button className="button primary product-buy" onClick={() => { addToCart(card); setAdded(true) }}><ShoppingBag size={15} />{added ? 'Added to bag' : 'Add to bag'}</button></div>
+  </article>
+}
 
-function Marketplace({ categoryFilter }) { const search = new URLSearchParams(useLocation().search).get('search') || ''; const [sort, setSort] = useState('popular'); const filtered = giftCards.filter((card) => (!categoryFilter || card.category.toLowerCase() === categoryFilter.toLowerCase()) && `${card.brand} ${card.name} ${card.category}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => sort === 'discount' ? b.discount - a.discount : sort === 'price' ? a.value - b.value : b.rating - a.rating); return <main className="page"><PageHeader eyebrow="The marketplace" title={categoryFilter ? `${categoryFilter} gifts` : 'Find a gift they’ll love.'} text="Premium gift cards from the brands that make everyday moments better." /><div className="market-toolbar"><SearchBar initial={search} /><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort cards"><option value="popular">Sort: Popular</option><option value="discount">Biggest discount</option><option value="price">Price: low to high</option></select></div><div className="market-layout"><aside className="filter-sidebar"><b>Filter by</b><div><span>Categories</span>{categories.slice(0, 6).map((category) => <Link className={category.name === categoryFilter ? 'selected' : ''} key={category.name} to={`/categories/${category.name}`}>{category.name}<small>{category.count}</small></Link>)}</div><div><span>Discount</span><label><input type="checkbox" /> 10% or more</label><label><input type="checkbox" /> 15% or more</label></div></aside><div className="market-results"><div className="result-line"><span><b>{filtered.length}</b> gift cards found</span><span className="desktop-only">Instant email delivery <Icon name="CheckCircle2" size={15} /></span></div><div className="card-grid">{filtered.map((card) => <GiftCardCard key={card.id} card={card} />)}</div>{filtered.length === 0 && <EmptyState title="No cards found" text="Try a different brand or category." />}</div></div></main> }
-function CategoryRoute() { const { category } = useParams(); return <Marketplace categoryFilter={category} /> }
-function ProductDetail() { const { id } = useParams(); const card = giftCards.find((item) => item.id === id) || giftCards[0]; const { addToCart } = useCart(); const { wishlist, toggleWishlist } = useWishlist(); const [denomination, setDenomination] = useState(card.value); const [quantity, setQuantity] = useState(1); const liked = wishlist.some((item) => item.id === card.id); const selected = { ...card, value: denomination }; return <main className="page"><Link className="back-link" to="/gift-cards"><Icon name="ArrowLeft" size={16} /> Back to gift cards</Link><div className="product-detail"><div className="product-preview" style={{ background: card.color }}><span className="detail-logo" style={{ background: card.accent }}>{card.logo}</span><b>{card.brand}</b><small>GIFTLY EXCHANGE</small><strong>{formatINR(denomination)}</strong></div><div className="product-copy"><p className="eyebrow">{card.category}</p><h1>{card.name}</h1><div className="detail-rating"><Rating value={card.rating} /> <span>· 120+ happy customers</span></div><p className="detail-description">Make their day with a little more choice. This digital {card.brand} gift card is delivered instantly and can be redeemed across their favourite experiences.</p><div className="detail-price"><b>{formatINR(denomination * (1 - card.discount / 100))}</b><del>{formatINR(denomination)}</del><Badge>Save {card.discount}%</Badge></div><div className="denominations"><span>Choose amount</span><div>{[250, 500, 1000, 2000, 5000].map((amount) => <button key={amount} className={denomination === amount ? 'selected' : ''} onClick={() => setDenomination(amount)}>{formatINR(amount)}</button>)}</div></div><div className="buy-row"><div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))}>−</button><span>{quantity}</span><button onClick={() => setQuantity(quantity + 1)}>+</button></div><Button onClick={() => addToCart(selected, quantity)}><Icon name="ShoppingBag" size={17} /> Add to cart</Button><button className={liked ? 'wish active large' : 'wish large'} onClick={() => toggleWishlist(card)} aria-label="Toggle wishlist"><Icon name="Heart" size={20} fill={liked ? 'currentColor' : 'none'} /></button></div><div className="delivery-note"><Icon name="Mail" /><span><b>Delivered instantly</b><small>Right to your email after checkout</small></span></div></div></div><div className="detail-lower"><div><h2>Why they'll love it</h2><p>Giftly digital cards are easy to send, delightful to receive, and always useful. Each order is checked and delivered securely.</p></div><div><h2>Good to know</h2><p>Valid for online and in-store redemption where available. This card cannot be exchanged for cash. Terms from the brand apply.</p></div></div><section className="section related"><div className="section-heading"><h2>You might also like</h2><Link className="text-link" to="/gift-cards">See all <Icon name="ArrowUpRight" size={16} /></Link></div><div className="card-grid">{giftCards.filter((item) => item.id !== card.id).slice(0, 4).map((item) => <GiftCardCard key={item.id} card={item} />)}</div></section></main> }
-function Cart() { const { cart, updateQuantity, removeFromCart } = useCart(); const [coupon, setCoupon] = useState(''); const [discount, setDiscount] = useState(0); const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0); return <main className="page"><PageHeader eyebrow="Your bag" title="Ready when you are." text="Review your gifts before they make someone's day." />{cart.length ? <div className="checkout-layout"><div className="cart-list">{cart.map((item) => <div className="cart-item" key={item.id}><div className="mini-visual" style={{ background: item.color }}><b style={{ background: item.accent }}>{item.logo}</b></div><div className="cart-item-copy"><b>{item.name}</b><span>{item.brand} · Instant delivery</span><strong>{formatINR(item.price)}</strong></div><div className="quantity"><button onClick={() => updateQuantity(item.id, item.quantity - 1)}>−</button><span>{item.quantity}</span><button onClick={() => updateQuantity(item.id, item.quantity + 1)}>+</button></div><button className="icon-button" onClick={() => removeFromCart(item.id)} aria-label="Remove item"><Icon name="Trash2" size={17} /></button></div>)}</div><aside className="summary"><h3>Order summary</h3><div><span>Subtotal</span><b>{formatINR(subtotal)}</b></div><div><span>Discount</span><b className="green">-{formatINR(discount)}</b></div><div className="coupon"><input value={coupon} onChange={(event) => setCoupon(event.target.value.toUpperCase())} placeholder="Coupon code" /><button onClick={() => setDiscount(['WELCOME10', 'SAVE20', 'GIFT50'].includes(coupon) ? Math.round(subtotal * (coupon === 'GIFT50' ? .05 : .1)) : 0)}>Apply</button></div><hr /><div className="summary-total"><span>Total</span><b>{formatINR(subtotal - discount)}</b></div><Link className="button primary full" to="/checkout">Continue to checkout <Icon name="ArrowRight" size={17} /></Link><small className="secure-note"><Icon name="ShieldCheck" size={15} /> Secure mock checkout · No payment charged</small></aside></div> : <EmptyState title="Your bag is waiting" text="Find something wonderful to send." action="Browse gift cards" link="/gift-cards" />}</main> }
-function EmptyState({ title, text, action, link }) { return <div className="empty-state"><span><Icon name="Gift" size={26} /></span><h2>{title}</h2><p>{text}</p>{action && <Link className="button primary" to={link}>{action}</Link>}</div> }
-function Checkout() { const { cart } = useCart(); const { user } = useAuth(); const navigate = useNavigate(); const [method, setMethod] = useState('UPI'); const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0); return <main className="page"><PageHeader eyebrow="Almost there" title="Complete your order." /><form className="checkout-layout" onSubmit={(event) => { event.preventDefault(); navigate('/order-success') }}><div className="form-panel"><h2>Delivery details</h2><div className="form-grid"><label>Full name<input defaultValue={user?.name || ''} required placeholder="Your full name" /></label><label>Email address<input type="email" defaultValue={user?.email || ''} required placeholder="you@example.com" /></label></div><label>Recipient email<input type="email" required placeholder="Where should we send the gift?" /></label><div className="email-note"><Icon name="Info" size={16} /><span>Cards are delivered digitally. No physical shipping needed.</span></div><h2>Payment method</h2><div className="payment-options">{['UPI', 'Card', 'Net Banking', 'Wallet'].map((item) => <button type="button" className={method === item ? 'selected' : ''} key={item} onClick={() => setMethod(item)}><Icon name={item === 'UPI' ? 'Smartphone' : item === 'Card' ? 'CreditCard' : item === 'Wallet' ? 'WalletCards' : 'Landmark'} size={18} />{item}</button>)}</div><label>{method === 'UPI' ? 'UPI ID' : method === 'Card' ? 'Card number' : `${method} details`}<input required placeholder={method === 'UPI' ? 'name@upi' : 'Enter demo details'} /></label><p className="mock-note">This is a demo checkout. No real payment will be processed.</p></div><aside className="summary"><h3>Order summary</h3>{cart.length ? cart.map((item) => <div key={item.id}><span>{item.brand} × {item.quantity}</span><b>{formatINR(item.price * item.quantity)}</b></div>) : <p>Your bag is empty.</p>}<hr /><div className="summary-total"><span>Total</span><b>{formatINR(total)}</b></div><Button type="submit" disabled={!cart.length}>Pay securely <Icon name="Lock" size={16} /></Button></aside></form></main> }
-function AuthPage({ mode }) { const { login } = useAuth(); const navigate = useNavigate(); const [email, setEmail] = useState(''); const title = mode === 'register' ? 'Make gifting your thing.' : mode === 'forgot' ? 'Find your way back.' : 'Welcome back, gifter.'; return <main className="auth-page"><div className="auth-art"><Link className="brand" to="/"><span className="brand-mark"><Icon name="Sparkles" size={18} /></span><span>giftly<span>exchange</span></span></Link><div><p className="eyebrow">Your gifting companion</p><h1>Good gifts<br /><em>feel personal.</em></h1></div></div><div className="auth-form"><p className="eyebrow">{mode === 'register' ? 'Create your account' : mode === 'forgot' ? 'Reset password' : 'Sign in to Giftly'}</p><h2>{title}</h2><p className="muted">{mode === 'forgot' ? 'Enter your email and we’ll send a reset link.' : 'Save favourites, track orders and make every gift count.'}</p><form onSubmit={(event) => { event.preventDefault(); if (mode === 'forgot') navigate('/login'); else { login(email); navigate('/dashboard') } }}><label>Email address<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>{mode !== 'forgot' && <label>Password<input type="password" required placeholder="••••••••" /></label>}{mode === 'register' && <label>Your name<input required placeholder="Aarav Mehta" /></label>}<Button type="submit">{mode === 'forgot' ? 'Send reset link' : mode === 'register' ? 'Create account' : 'Continue'} <Icon name="ArrowRight" size={16} /></Button></form>{mode === 'login' && <Link className="form-link" to="/forgot-password">Forgot password?</Link>}<p className="auth-switch">{mode === 'register' ? 'Already have an account?' : 'New to Giftly?'} <Link to={mode === 'register' ? '/login' : '/register'}>{mode === 'register' ? 'Sign in' : 'Create an account'}</Link></p></div></main> }
-function Dashboard({ profile = false }) {
-  const { user } = useAuth()
-  if (profile) return <Profile />
-  return <main className="page"><PageHeader eyebrow="Your Giftly" title={`Good morning, ${user?.name?.split(' ')[0] || 'Aarav'}.`} text="A little overview of your gifting world." /><div className="stats-grid"><StatCard icon="ShoppingBag" value="12" label="Gift cards bought" /><StatCard icon="Heart" value="06" label="Saved favourites" /><StatCard icon="RefreshCw" value="₹3,040" label="Earned from selling" /><StatCard icon="Sparkles" value="18" label="People gifted" /></div><WalletSummary /><div className="dashboard-grid"><section className="panel"><div className="panel-heading"><h2>Recent orders</h2><Link to="/orders">View all</Link></div>{mockOrders.map((order) => <OrderRow key={order.id} order={order} />)}</section><section className="panel activity"><div className="panel-heading"><h2>Quick actions</h2></div><Link to="/gift-cards"><Icon name="Search" /><span><b>Find a gift</b><small>Browse the marketplace</small></span><Icon name="ArrowUpRight" /></Link><Link to="/sell-gift-card"><Icon name="RefreshCw" /><span><b>Sell a card</b><small>Turn unused into useful</small></span><Icon name="ArrowUpRight" /></Link><Link to="/gift-card-verification"><Icon name="ScanLine" /><span><b>Verify a gift card</b><small>Check card details and balance</small></span><Icon name="ArrowUpRight" /></Link><Link to="/gift-card-verifications"><Icon name="FileText" /><span><b>Gift card verification history</b><small>View previous card checks</small></span><Icon name="ArrowUpRight" /></Link><Link to="/wishlist"><Icon name="Heart" /><span><b>Wishlist</b><small>6 cards saved for later</small></span><Icon name="ArrowUpRight" /></Link><Link to="/verification"><Icon name="ShieldCheck" /><span><b>Trust & verification</b><small>Review your account status</small></span><Icon name="ArrowUpRight" /></Link></section></div><TradingActivity /><EscrowActivity /></main>
+function ProductGrid({ cards }) {
+  return <div className="card-grid">{cards.map((card) => <ProductCard key={card.id} card={card} />)}</div>
 }
-function WalletSummary() {
-  const { wallet, selectedCurrency, transactions } = useWallet()
-  const summary = wallet ? getWalletSummary(wallet.userId, selectedCurrency) : null
-  return <section className="wallet-dashboard-summary"><div className="wallet-dashboard-head"><span className="wallet-dashboard-icon"><Icon name="WalletCards" size={20} /></span><div><p className="eyebrow">Multi-currency wallet</p><h2>Wallet Summary</h2></div><Link className="button outline" to="/wallet">Open Wallet <Icon name="ArrowUpRight" size={15} /></Link></div><div className="wallet-dashboard-metrics"><div><small>Total wallet value</small><b>{summary ? new Intl.NumberFormat('en', { style: 'currency', currency: selectedCurrency, maximumFractionDigits: 2 }).format(summary.totalValue) : 'Sign in to view'}</b></div><div><small>Default currency</small><b>{selectedCurrency}</b></div><div><small>Supported currencies</small><b>8 currencies</b></div></div><div className="wallet-dashboard-recent"><b>Recent wallet transactions</b>{transactions.length ? transactions.slice(0, 3).map((transaction) => <Link key={transaction.id} to={`/wallet/transactions/${transaction.id}`}><span>{transaction.type.replaceAll('_', ' ')}</span><small>{transaction.currency} {Number(transaction.amount).toFixed(2)} · {transaction.status}</small></Link>) : <span className="wallet-dashboard-empty">No wallet activity yet</span>}</div><p className="wallet-dashboard-notice">Prototype wallet only. No real funds are stored or transferred.</p></section>
+
+function StoreHome() {
+  return <main className="storefront-home">
+    <section className="hero hero-premium">
+      <div className="hero-copy">
+        <div className="hero-kicker"><span className="brand-mark"><Gift size={16} /></span><span><b>Giftly Exchange</b><small>Give More. Save More. Gift Smarter.</small></span></div>
+        <p className="eyebrow">A global gift-card marketplace</p>
+        <h1>More joy in every<br /><em>gift card.</em></h1>
+        <p>Discover thoughtful gifts, browse verified-seller listings, or explore ways to exchange a card you are not using.</p>
+        <form className="search-bar home-search" action="/gift-cards"><Search size={18} /><input name="q" placeholder="Search brands, categories, or gift cards" aria-label="Search gift cards" /><button aria-label="Search gift cards"><ArrowRight size={17} /></button></form>
+        <div className="hero-actions"><Link className="button primary" to="/gift-cards">Explore Gift Cards <ArrowRight size={16} /></Link><Link className="button outline" to="/sell-method">Sell a Gift Card <ArrowUpRight size={16} /></Link></div>
+      </div>
+      <div className="hero-art"><div className="sun" /><img className="restored-hero-image" src={heroImage} alt="Gift cards arranged for gifting" /><div className="hero-card card-one"><span>Giftly</span><b>For someone<br />wonderful.</b><small>GIVE MORE · GIFT SMARTER</small></div><div className="hero-card card-two"><span>Giftly Exchange</span><b>₹2,000</b><small>SHOPPING · DIGITAL GIFT CARD</small></div><div className="hero-art-note"><Globe2 size={15} /><span>Thoughtful picks<br /><b>across categories</b></span></div></div>
+    </section>
+    <section className="trust-stats" aria-label="Giftly marketplace at a glance"><div><b>{giftCards.length}</b><span>sample gift cards</span></div><div><b>{categories.length}</b><span>categories to explore</span></div><div><b>{offers.length}</b><span>prototype offers</span></div><div><span className="trust-stat-label"><ShieldCheck size={16} /> Prototype marketplace</span><small>Transparent about what is simulated</small></div></section>
+    <section className="section category-section"><div className="section-heading"><div><p className="eyebrow">Find your kind of happy</p><h2>Browse by category</h2></div><Link className="text-link" to="/gift-cards">All gift cards <ArrowRight size={15} /></Link></div><div className="category-grid">{categories.slice(0, 6).map((category) => <Link className="category-card" to={`/categories/${encodeURIComponent(category.name)}`} key={category.name} style={{ '--category-bg': category.color, '--category-accent': category.accent }}><span className="category-icon"><Gift size={19} /></span><span><b>{category.name}</b><small>{category.count} gift ideas</small></span><ChevronRight size={15} /></Link>)}</div></section>
+    <section className="section tinted popular-section"><div className="section-heading"><div><p className="eyebrow">Popular gift cards</p><h2>Good picks, ready to explore</h2></div><Link className="text-link" to="/gift-cards">Browse the catalog <ArrowRight size={15} /></Link></div><ProductGrid cards={giftCards.slice(0, 4)} /></section>
+    <section className="section offers-section"><div className="section-heading"><div><p className="eyebrow">Today's offers</p><h2>A little extra joy</h2></div><Link className="text-link" to="/offers">See all offers <ArrowRight size={15} /></Link></div><div className="offer-grid">{offers.map((offer) => <article className={`offer-card ${offer.color}`} key={offer.id}><span><Sparkles size={19} /></span><p className="eyebrow">Giftly offer</p><h3>{offer.title}</h3><p>{offer.detail}</p><b>{offer.code}</b></article>)}</div><p className="section-caption">Offers are sample product content and are not redeemable in checkout.</p></section>
+    <section className="section how-section" id="how-it-works"><div className="section-heading"><div><p className="eyebrow">A simple place to start</p><h2>How Giftly works</h2></div><p>Explore the product flows. Purchases and fulfilment are not connected in this prototype.</p></div><div className="how-steps"><article><span>01</span><div className="how-step-icon"><Search size={20} /></div><h3>Find a card</h3><p>Browse the sample catalog or explore peer-to-peer marketplace listings.</p></article><article><span>02</span><div className="how-step-icon"><Heart size={20} /></div><h3>Choose what fits</h3><p>Compare face value, sample pricing, and listing details before deciding.</p></article><article><span>03</span><div className="how-step-icon"><ShieldCheck size={20} /></div><h3>Explore with clarity</h3><p>Use the local prototype workflows with clear labels about what is simulated.</p></article></div></section>
+    <section className="section exchange-section"><div className="section-heading"><div><p className="eyebrow">One marketplace, more possibilities</p><h2>Buy, sell, or exchange</h2></div></div><div className="exchange-paths"><Link to="/gift-cards"><span><ShoppingBag size={20} /></span><b>Buy a gift card</b><small>Browse sample cards by brand and category.</small><span className="path-link">Explore catalog <ArrowRight size={14} /></span></Link><Link to="/sell-method"><span><ArrowUpRight size={20} /></span><b>Sell a gift card</b><small>Try the gift-card verification and selling prototype.</small><span className="path-link">See selling options <ArrowRight size={14} /></span></Link><Link to="/marketplace"><span><Globe2 size={20} /></span><b>Explore exchange listings</b><small>View peer-to-peer cards and auctions from the local demo.</small><span className="path-link">Visit marketplace <ArrowRight size={14} /></span></Link></div></section>
+    <section className="section why-section"><div className="why-copy"><p className="eyebrow">Designed for thoughtful choices</p><h2>Clarity comes first.</h2><p>Giftly brings gift-card discovery and exchange tools into one considered experience, with prototype limits stated plainly.</p><Link className="text-link" to="/marketplace">Explore the marketplace <ArrowRight size={15} /></Link></div><div className="why-list"><article><span><BadgeCheck size={18} /></span><div><b>Clear prices</b><p>See face value and sample discount together.</p></div></article><article><span><LockKeyhole size={18} /></span><div><b>Privacy-aware prototype</b><p>Never enter payment details or real gift-card credentials in the storefront.</p></div></article><article><span><CircleCheck size={18} /></span><div><b>Honest about simulation</b><p>Wallet, verification, delivery, and escrow flows are not real services.</p></div></article></div></section>
+    <section className="trust-panel"><div className="trust-panel-icon"><ShieldCheck size={22} /></div><div><p className="eyebrow">Trust & safety</p><h2>A prototype, with the limits in view.</h2><p>Giftly does not process real payments or provide real KYC, retailer verification, fraud detection, delivery, or escrow custody. Production use would need secure backend systems, verified providers, and legal review.</p></div><Link className="button outline" to="/verification">Explore verification <ArrowRight size={15} /></Link></section>
+    <section className="final-cta"><div><p className="eyebrow">Find a gift with a little more meaning</p><h2>Give More. Save More.<br /><em>Gift Smarter.</em></h2><p>Start exploring Giftly's sample gift-card catalog.</p></div><Link className="button primary" to="/gift-cards">Explore Gift Cards <ArrowRight size={16} /></Link></section>
+  </main>
 }
-function StatCard({ icon, value, label }) { return <div className="stat-card"><span><Icon name={icon} /></span><b>{value}</b><small>{label}</small></div> }
-function OrderRow({ order }) { return <Link className="order-row" to={`/orders/${order.id}`}><div className="order-thumb" style={{ background: order.items[0].color }}>{order.items[0].logo}</div><span><b>{order.items[0].name}</b><small>{order.id} · {order.date}</small></span><strong>{formatINR(order.total)}</strong><Badge>{order.status}</Badge><Icon name="ChevronRight" size={17} /></Link> }
-function Orders({ detail = false }) { const { id } = useParams(); const order = mockOrders.find((item) => item.id === id) || mockOrders[0]; if (detail) return <main className="page narrow"><Link className="back-link" to="/orders"><Icon name="ArrowLeft" size={16} /> All orders</Link><PageHeader eyebrow={order.id} title="Your gift is on its way." text={order.date} /><div className="panel detail-order"><div className="order-status"><Icon name="CheckCircle2" size={26} /><span><b>{order.status}</b><small>Delivered instantly to your inbox</small></span></div><OrderRow order={order} /><div className="timeline"><span className="done"><Icon name="Check" /></span><span>Order placed<small>Payment confirmed</small></span><span className="done"><Icon name="Check" /></span><span>Card delivered<small>Sent to your email</small></span></div></div></main>; return <main className="page"><PageHeader eyebrow="Your history" title="Orders" text="Every thoughtful moment, all in one place." /><div className="panel orders-panel">{mockOrders.map((order) => <OrderRow key={order.id} order={order} />)}</div></main> }
-function Profile() {
-  const { user } = useAuth()
-  const verified = user?.verification?.identityStatus === 'Verified'
-  return <main className="page"><PageHeader eyebrow="Account settings" title="Your profile" text="Keep your details up to date." /><div className="profile-layout"><div className="profile-avatar">{user?.name?.charAt(0) || 'A'}</div><form className="panel form-panel" onSubmit={(event) => event.preventDefault()}><h2>Personal information</h2><label>Full name<input defaultValue={user?.name || 'Aarav Mehta'} /></label><label>Email address<input defaultValue={user?.email || 'aarav@example.com'} type="email" /></label><label>Phone number<input placeholder="+91 98765 43210" /></label><Button>Save changes</Button></form></div><Link className="profile-verification-link" to="/verification"><span className="profile-verification-icon"><Icon name={verified ? 'BadgeCheck' : 'ShieldCheck'} size={21} /></span><span><b>Trust & verification {verified && <span className="profile-verified-badge"><Icon name="BadgeCheck" size={13} /> Verified</span>}</b><small>{verified ? 'Your identity is verified.' : 'Add verification details and review your account status.'}</small></span><Icon name="ArrowUpRight" size={17} /></Link></main>
-}
-function SellPage() {
-  const [submitted, setSubmitted] = useState(false)
+
+function CatalogPage() {
+  const { category } = useParams()
   const [searchParams] = useSearchParams()
-  const { giftCardVerifications } = useAuth()
-  const verificationId = searchParams.get('verification')
-  const verifiedRecord = giftCardVerifications.find((record) => record.id === verificationId && record.verificationStatus === 'SUCCESSFUL')
-  return <main className="page"><PageHeader eyebrow="Make it useful" title="Sell your gift card." text="Unlock value from cards you won't use. Simple, secure, transparent." /><div className="sell-layout"><form className="panel form-panel" onSubmit={(event) => { event.preventDefault(); if (verifiedRecord) setSubmitted(true) }}><h2>Card details</h2><div className={verifiedRecord ? 'sell-verification-state verified' : 'sell-verification-state'}>{verifiedRecord ? <><Icon name="BadgeCheck" /><span><b>Gift Card Verified</b><small>{verifiedRecord.brand} · {verifiedRecord.maskedCardNumber} · {verifiedRecord.referenceId}</small></span></> : <><Icon name="ShieldAlert" /><span><b>Verification Required</b><small>Verify your gift card before submitting it for sale.</small></span></>}<Link className="button outline" to="/gift-card-verification?returnTo=%2Fsell-gift-card">{verifiedRecord ? 'Verify another card' : 'Verify Gift Card'}</Link></div><div className="form-grid"><label>Brand<select><option>Myntra</option><option>Amazon</option><option>Swiggy</option><option>Other</option></select></label><label>Category<select>{categories.map((category) => <option key={category.name}>{category.name}</option>)}</select></label><label>Original value<input type="number" placeholder="₹ 2,500" /></label><label>Expected selling price<input type="number" placeholder="₹ 2,150" /></label><label>Gift card code<input placeholder="Enter code" /></label><label>Expiry date<input type="date" /></label><label>Purchase date<input type="date" /></label></div><label>Description<textarea placeholder="Anything we should know?"></textarea></label><label className="upload"><Icon name="UploadCloud" /><span><b>Upload proof of purchase</b><small>PNG, JPG or PDF · Max 5MB</small></span><input type="file" /></label><Button type="submit" disabled={!verifiedRecord}>Submit for review <Icon name="ArrowRight" size={16} /></Button>{submitted && <div className="success-note"><Icon name="CheckCircle2" /> Request submitted. Status: <b>Pending Review</b></div>}</form><aside className="payout-card"><p className="eyebrow">Your estimate</p><h2>Get more from<br /><em>unused gifts.</em></h2><div className="payout-number">₹2,150</div><span>Estimated payout</span><hr /><p>Giftly takes a small 5% service fee to keep every exchange safe and simple.</p><div className="mini-check"><Icon name="ShieldCheck" /> Secure review process</div><div className="mini-check"><Icon name="Clock3" /> Paid within 2 business days</div></aside></div></main>
-}
-function Offers() { return <main className="page"><PageHeader eyebrow="More to love" title="Offers worth sharing." text="A little extra joy, at a little less." /><div className="offer-grid">{offers.map((offer) => <div className={`offer-card ${offer.color}`} key={offer.id}><div className="offer-icon"><Icon name={offer.icon} size={25} /></div><Badge>Limited time</Badge><h2>{offer.title}</h2><p>{offer.detail}</p><div className="offer-code"><span>Use code</span><b>{offer.code}</b><button onClick={() => navigator.clipboard?.writeText(offer.code)}><Icon name="Copy" size={15} /></button></div></div>)}</div><section className="section offer-fine"><div className="section-heading"><div><p className="eyebrow">All the good details</p><h2>Deals made for better gifting</h2></div></div><div className="benefit-grid"><div><Icon name="Percent" /><h3>Always a little extra</h3><p>Our marketplace prices are already below face value.</p></div><div><Icon name="Zap" /><h3>Instant delivery</h3><p>No waiting around. Gifts arrive in seconds.</p></div><div><Icon name="ShieldCheck" /><h3>Safe & verified</h3><p>Every card is checked before it reaches you.</p></div></div></section></main> }
-function Wishlist() { const { wishlist } = useWishlist(); return <main className="page"><PageHeader eyebrow="Saved for later" title="Your wishlist." text="The gifts you had a feeling they'd love." />{wishlist.length ? <div className="card-grid">{wishlist.map((card) => <GiftCardCard key={card.id} card={card} />)}</div> : <EmptyState title="Your wishlist is quiet" text="Tap the heart on a gift card to save it here." action="Explore gift cards" link="/gift-cards" />}</main> }
-function SupportPage({ type = 'support' }) { const title = type === 'about' ? 'We believe better gifting is simpler.' : type === 'contact' ? 'Let’s talk gifting.' : 'How can we help?'; return <main className="page narrow"><PageHeader eyebrow={type === 'about' ? 'The Giftly story' : 'Support centre'} title={title} text={type === 'about' ? 'Giftly Exchange was born from a simple idea: the best gifts are the ones that give people a choice.' : 'Find quick answers or reach our small, human support team.'} />{type === 'about' ? <div className="about-copy"><div><h2>Gifting should feel good for everyone.</h2><p>We bring together trusted brands, thoughtful design and smart prices to make every gift feel more personal. From a last-minute thank you to a well-planned celebration, Giftly helps you give with confidence.</p></div><div className="about-stat"><b>50k+</b><span>gifters choosing better</span></div></div> : <div className="support-grid"><div className="panel support-links"><h2>Popular questions</h2>{['Where is my gift card?', 'How do I sell a gift card?', 'What payment methods are accepted?', 'Can I get a refund?'].map((question) => <button key={question}>{question}<Icon name="ChevronRight" size={17} /></button>)}</div><form className="panel form-panel" onSubmit={(event) => event.preventDefault()}><h2>{type === 'contact' ? 'Send us a message' : 'Open a support ticket'}</h2><label>Your email<input type="email" placeholder="you@example.com" /></label><label>How can we help?<textarea placeholder="Tell us a little more..."></textarea></label><Button>Send message <Icon name="ArrowRight" size={16} /></Button></form></div>}</main> }
-function ExchangeRequests() { return <main className="page"><PageHeader eyebrow="Your selling activity" title="Exchange requests" text="Track every card you've sent our way." /><div className="panel orders-panel">{mockExchanges.map((exchange) => <div className="exchange-row" key={exchange.id}><div className="mini-visual"><b>{exchange.brand.charAt(0)}</b></div><span><b>{exchange.brand} gift card</b><small>{exchange.id} · {exchange.date}</small></span><strong>{formatINR(exchange.payout)}</strong><Badge>{exchange.status}</Badge><Icon name="ChevronRight" size={17} /></div>)}</div></main> }
-
-const adminLinks = [['/admin', 'LayoutDashboard', 'Overview'], ['/admin/gift-cards', 'Gift', 'Gift cards'], ['/admin/categories', 'Grid2X2', 'Categories'], ['/admin/orders', 'ShoppingBag', 'Orders'], ['/admin/verifications', 'ShieldCheck', 'Verifications'], ['/admin/gift-card-verifications', 'ScanLine', 'Card checks'], ['/admin/trading', 'ArrowLeftRight', 'Trading'], ['/admin/escrow', 'LockKeyhole', 'Escrow'], ['/admin/wallet', 'WalletCards', 'Wallet'], ['/admin/disputes', 'MessageSquareWarning', 'Disputes'], ['/admin/users', 'Users', 'Users'], ['/admin/exchanges', 'RefreshCw', 'Exchanges'], ['/admin/offers', 'BadgePercent', 'Offers'], ['/admin/settings', 'Settings2', 'Settings']]
-function AdminLayout({ children }) { return <div className="admin-layout"><aside className="admin-sidebar"><Link className="brand" to="/"><span className="brand-mark"><Icon name="Sparkles" size={18} /></span><span>giftly<span>exchange</span></span></Link><p className="admin-label">Workspace</p>{adminLinks.map(([to, icon, label]) => <NavLink end={to === '/admin'} key={to} to={to}><Icon name={icon} size={17} />{label}</NavLink>)}<Link className="back-store" to="/"><Icon name="ArrowLeft" size={16} /> Back to store</Link></aside><div className="admin-content"><div className="admin-top"><span>Tuesday, 27 August 2024</span><span className="admin-user"><span className="avatar">A</span> Admin view</span></div>{children}</div></div> }
-function AdminPage({ section = 'Overview' }) { const [query, setQuery] = useState(''); const rows = section === 'Gift cards' ? giftCards : section === 'Orders' ? mockOrders : section === 'Exchanges' ? mockExchanges : [{ id: 'USR-01', brand: 'Aarav Mehta', status: 'Active', date: 'aarav@example.com' }, { id: 'USR-02', brand: 'Rhea Kapoor', status: 'Active', date: 'rhea@example.com' }, { id: 'USR-03', brand: 'Vikram Nair', status: 'Paused', date: 'vikram@example.com' }]; if (section === 'Overview') return <div className="admin-page"><div className="admin-heading"><div><p className="eyebrow">Good morning, admin</p><h1>Command centre</h1></div><Button><Icon name="Download" size={16} /> Export report</Button></div><div className="stats-grid admin-stats"><StatCard icon="Users" value="12,480" label="Total users" /><StatCard icon="IndianRupee" value="₹8.4L" label="Revenue this month" /><StatCard icon="ShoppingBag" value="2,184" label="Cards sold" /><StatCard icon="RefreshCw" value="84" label="Exchange requests" /></div><div className="admin-dashboard-grid"><div className="panel chart-panel"><div className="panel-heading"><h2>Revenue overview</h2><select><option>Last 30 days</option></select></div><div className="fake-chart"><div className="chart-y"><span>₹80k</span><span>₹60k</span><span>₹40k</span><span>₹20k</span><span>₹0</span></div><div className="bars">{[42, 61, 48, 73, 56, 82, 68, 90, 75, 95, 83, 100].map((height, index) => <span key={index} style={{ height: `${height}%` }}></span>)}</div></div><div className="chart-x"><span>01 Aug</span><span>08 Aug</span><span>15 Aug</span><span>22 Aug</span><span>Today</span></div></div><div className="panel activity"><div className="panel-heading"><h2>Recent activity</h2><Link to="/admin/orders">View all</Link></div>{['New order #GEX-240821', 'Exchange request #EX-9182', 'New user joined', 'Offer “Weekend treat” updated'].map((item, index) => <div className="admin-activity" key={item}><span className={`activity-dot dot-${index}`}></span><span><b>{item}</b><small>{index + 1} hour{index ? 's' : ''} ago</small></span></div>)}</div></div></div>; return <div className="admin-page"><div className="admin-heading"><div><p className="eyebrow">Manage your store</p><h1>{section}</h1></div><Button><Icon name="Plus" size={16} /> Add {section.slice(0, -1)}</Button></div><div className="panel admin-table"><div className="table-toolbar"><div className="table-search"><Icon name="Search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${section.toLowerCase()}...`} /></div><Button variant="outline"><Icon name="SlidersHorizontal" size={16} /> Filters</Button></div><div className="table-head"><span>Details</span><span>{section === 'Gift cards' ? 'Category' : section === 'Orders' ? 'Date' : 'Status'}</span><span>Action</span></div>{rows.filter((row) => `${row.brand} ${row.id}`.toLowerCase().includes(query.toLowerCase())).map((row) => <div className="table-row" key={row.id}><span className="table-primary">{section === 'Gift cards' && <span className="table-logo" style={{ background: row.accent }}>{row.logo}</span>}<b>{row.brand || row.name}</b><small>{row.id || row.name}</small></span><span>{row.category || row.date || <Badge>{row.status}</Badge>}</span><span className="row-actions"><button><Icon name="MoreHorizontal" size={18} /></button></span></div>)}</div></div> }
-function RequireUser({ children, admin = false }) {
-  const { user } = useAuth()
-  if (!user) return <Navigate to="/login" replace />
-  if (admin && user.role !== 'admin') return <Navigate to="/dashboard" replace />
-  return children
-}
-
-function AdminRoutes() {
-  return <RequireUser admin><AdminLayout><Routes><Route index element={<AdminPage />} /><Route path="gift-cards" element={<AdminPage section="Gift cards" />} /><Route path="categories" element={<AdminPage section="Categories" />} /><Route path="orders" element={<AdminPage section="Orders" />} /><Route path="verifications" element={<AdminVerificationsPage />} /><Route path="gift-card-verifications" element={<AdminGiftCardVerificationsPage />} /><Route path="trading" element={<AdminTradingPage />} /><Route path="escrow" element={<AdminEscrowDashboardPage />} /><Route path="escrow/:escrowId" element={<EscrowDetailPage />} /><Route path="wallet" element={<AdminWalletPage />} /><Route path="disputes" element={<AdminDisputesPage />} /><Route path="users" element={<AdminPage section="Users" />} /><Route path="exchanges" element={<AdminPage section="Exchanges" />} /><Route path="offers" element={<AdminPage section="Offers" />} /><Route path="settings" element={<AdminPage section="Settings" />} /></Routes></AdminLayout></RequireUser>
+  const normalized = decodeURIComponent(category || '').toLowerCase()
+  const [query, setQuery] = useState(searchParams.get('q') || '')
+  const [brand, setBrand] = useState('')
+  const [maximumValue, setMaximumValue] = useState('')
+  const [minimumDiscount, setMinimumDiscount] = useState('')
+  const cards = giftCards.filter((card) => {
+    const textMatch = `${card.name} ${card.brand} ${card.category}`.toLowerCase().includes(query.trim().toLowerCase())
+    return (!category || card.category.toLowerCase() === normalized) && textMatch && (!brand || card.brand === brand) && (!maximumValue || card.value <= Number(maximumValue)) && (!minimumDiscount || card.discount >= Number(minimumDiscount))
+  })
+  const title = category || (query ? `Results for “${query}”` : 'Gift Cards')
+  const clearFilters = () => { setQuery(''); setBrand(''); setMaximumValue(''); setMinimumDiscount('') }
+  return <main className="page catalog-page"><header className="page-header catalog-heading"><div><p className="eyebrow">Giftly Exchange · Sample catalog</p><h1>{title}</h1><p>Compare sample card values and discounts. Checkout is not connected.</p></div><span className="catalog-assurance"><ShieldCheck size={16} /> Prototype pricing</span></header>
+    <div className="catalog-search search-bar"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search brands, categories, or gift cards" aria-label="Search gift cards" />{query && <button type="button" className="catalog-clear-search" onClick={() => setQuery('')} aria-label="Clear search"><X size={16} /></button>}</div>
+    <div className="catalog-categories" aria-label="Filter by category"><Link className={!category ? 'active' : ''} to="/gift-cards">All categories</Link>{categories.map((item) => <Link className={category === item.name ? 'active' : ''} to={`/categories/${encodeURIComponent(item.name)}`} key={item.name}>{item.name}</Link>)}</div>
+    <div className="catalog-filter-row"><label>Brand<select value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">All brands</option>{[...new Set(giftCards.map((card) => card.brand))].sort().map((item) => <option key={item}>{item}</option>)}</select></label><label>Maximum face value<select value={maximumValue} onChange={(event) => setMaximumValue(event.target.value)}><option value="">Any value</option><option value="1000">Up to {formatINR(1000)}</option><option value="2500">Up to {formatINR(2500)}</option><option value="5000">Up to {formatINR(5000)}</option></select></label><label>Discount<select value={minimumDiscount} onChange={(event) => setMinimumDiscount(event.target.value)}><option value="">Any discount</option><option value="5">5% or more</option><option value="10">10% or more</option><option value="15">15% or more</option></select></label><span className="catalog-result-count"><b>{cards.length}</b> sample cards</span>{(brand || maximumValue || minimumDiscount || query) && <button className="catalog-reset" onClick={clearFilters}>Clear filters</button>}</div>
+    {cards.length ? <ProductGrid cards={cards} /> : <div className="empty-state catalog-empty"><Search size={23} /><h2>No matching gift cards</h2><p>Try changing your search or filters.</p><button className="button outline" onClick={clearFilters}>Clear filters</button></div>}
+  </main>
 }
 
-function AppRoutes() {
+function OffersPage() {
+  return <main className="page"><header className="page-header"><p className="eyebrow">Giftly offers</p><h1>Small surprises, extra value</h1><p>Sample offers for the Giftly Exchange prototype.</p></header><div className="offer-grid">{offers.map((offer) => <article className={`offer-card ${offer.color}`} key={offer.id}><span><Sparkles size={19} /></span><p className="eyebrow">Giftly offer</p><h3>{offer.title}</h3><p>{offer.detail}</p><b>{offer.code}</b></article>)}</div><p className="mock-note"><ShieldCheck size={15} /> Offer codes are illustrative and are not connected to checkout.</p></main>
+}
+
+function GiftCardDetailPage() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const card = giftCards.find((item) => item.id === id)
+  const { addToCart } = useCart()
+  const { toggleWishlist, wishlist } = useWishlist()
+  const [quantity, setQuantity] = useState(1)
+  const [notice, setNotice] = useState('')
+  if (!card) return <main className="page"><h1>Gift card not found</h1><Link to="/gift-cards">Browse gift cards</Link></main>
+  const saved = wishlist.some((item) => item.id === card.id)
+  const price = Math.round(card.value * (1 - card.discount / 100))
+  const addSelected = () => { addToCart(card, quantity); setNotice(`${quantity} ${card.name} added to your bag.`) }
+  return <main className="page product-page"><Link className="back-link" to="/gift-cards">← Back to gift cards</Link><div className="product-detail"><div className="product-preview product-preview-premium" style={{ background: card.color, color: card.accent }}><div className="product-preview-top"><span className="gift-logo" style={{ background: card.accent }}>{card.logo}</span><span>GIFTLY EXCHANGE</span></div><div><small>DIGITAL GIFT CARD</small><b>{card.brand}</b><strong>{formatINR(card.value)}</strong></div><span className="product-preview-circles" /></div><section className="product-copy"><p className="eyebrow">{card.category} · Sample catalog</p><h1>{card.name}</h1><div className="product-brand-rating"><b>{card.brand}</b><span>★ {card.rating} <small>sample rating</small></span></div><p>Give someone the freedom to choose. This listing uses sample catalog data for the Giftly Exchange prototype.</p><div className="product-value-box"><div><span>Selling price</span><b>{formatINR(price)}</b></div><div><span>Face value</span><del>{formatINR(card.value)}</del></div><span className="product-discount">Save {card.discount}%</span></div><div className="product-availability"><CircleCheck size={16} /><span><b>Available in sample catalog</b><small>Real inventory and fulfillment are not connected.</small></span></div><div className="product-buy-row"><label className="quantity-control">Quantity<select value={quantity} onChange={(event) => setQuantity(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((count) => <option key={count}>{count}</option>)}</select></label><button className="button outline product-save" onClick={() => toggleWishlist(card)} aria-label={saved ? 'Remove from wishlist' : 'Add to wishlist'}><Heart size={17} fill={saved ? 'currentColor' : 'none'} />{saved ? 'Saved' : 'Wishlist'}</button></div><div className="product-actions"><button className="button outline" onClick={addSelected}><ShoppingBag size={16} /> Add to bag</button><button className="button primary" onClick={() => { addSelected(); navigate('/cart') }}>Buy now <ArrowRight size={16} /></button></div>{notice && <p className="product-added-note" role="status">{notice}</p>}<div className="product-assurance"><div><PackageCheck size={17} /><span><b>Delivery details</b><small>Digital delivery is not active in this prototype.</small></span></div><div><LockKeyhole size={17} /><span><b>Safe to explore</b><small>Do not enter payment or card credentials here.</small></span></div></div><p className="mock-note"><ShieldCheck size={15} /> No real checkout, payment, or gift-card fulfillment is connected.</p></section></div><section className="related-products"><div className="section-heading"><div><p className="eyebrow">Keep exploring</p><h2>Related gift cards</h2></div><Link className="text-link" to={`/categories/${encodeURIComponent(card.category)}`}>More in {card.category} <ArrowRight size={14} /></Link></div><ProductGrid cards={giftCards.filter((item) => item.id !== card.id && item.category === card.category).slice(0, 3)} /></section></main>
+}
+
+function CartPage() {
+  const { cart, updateQuantity, removeFromCart } = useCart()
+  const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0)
+  return <main className="page"><header className="page-header"><p className="eyebrow">Your selections</p><h1>Shopping bag</h1><p>Sample catalog items stay in this browser for the prototype.</p></header>{cart.length ? <div className="checkout-layout"><section className="cart-list">{cart.map((item) => <article className="cart-item" key={item.id}><div className="mini-visual" style={{ background: item.accent }}>{item.logo}</div><div className="cart-item-copy"><b>{item.name}</b><span>{item.brand}</span><strong>{formatINR(item.price)}</strong></div><label>Quantity <select value={item.quantity} onChange={(event) => updateQuantity(item.id, Number(event.target.value))}>{[1, 2, 3, 4, 5].map((count) => <option key={count}>{count}</option>)}</select></label><button className="icon-button" onClick={() => removeFromCart(item.id)} aria-label={`Remove ${item.name}`}>Remove</button></article>)}</section><aside className="summary"><h3>Order summary</h3><div><span>Subtotal</span><b>{formatINR(subtotal)}</b></div><p className="mock-note"><ShieldCheck size={15} /> Checkout and payment are not connected in this prototype.</p><Link className="button primary full" to="/marketplace">Continue exploring</Link></aside></div> : <div className="empty-state"><ShoppingBag size={25} /><h2>Your bag is empty</h2><p>Find something thoughtful in the gift card catalog.</p><Link className="button primary" to="/gift-cards">Browse gift cards</Link></div>}</main>
+}
+
+function WishlistPage() {
+  const { wishlist } = useWishlist()
+  return <main className="page"><header className="page-header"><p className="eyebrow">Saved for later</p><h1>Your wishlist</h1></header>{wishlist.length ? <ProductGrid cards={wishlist} /> : <div className="empty-state"><Heart size={25} /><h2>No saved gift cards yet</h2><p>Save an item from its detail page and it will appear here.</p><Link className="button outline" to="/gift-cards">Browse gift cards</Link></div>}</main>
+}
+
+function LoginPage() {
+  const { user, login } = useAuth()
+  const navigate = useNavigate()
   const location = useLocation()
-  const isAdmin = location.pathname.startsWith('/admin')
-  return isAdmin ? <Routes><Route path="/admin/*" element={<AdminRoutes />} /></Routes> : <><Navbar /><Routes>
-    <Route path="/" element={<Home />} />
-    <Route path="/gift-cards" element={<Marketplace />} />
-    <Route path="/gift-cards/:id" element={<ProductDetail />} />
-    <Route path="/marketplace" element={<MarketplaceListingsPage />} />
-    <Route path="/marketplace/:listingId" element={<ListingDetailPage />} />
-    <Route path="/auctions" element={<AuctionMarketplacePage />} />
-    <Route path="/auctions/:auctionId" element={<AuctionDetailPage />} />
-    <Route path="/categories/:category" element={<CategoryRoute />} />
-    <Route path="/offers" element={<Offers />} />
-    <Route path="/sell-gift-card" element={<SellPage />} />
-    <Route path="/cart" element={<Cart />} />
-    <Route path="/checkout" element={<Checkout />} />
-    <Route path="/order-success" element={<main className="page success-page"><div className="success-icon"><Icon name="Check" size={32} /></div><p className="eyebrow">Order confirmed</p><h1>Your gift is on its way.</h1><p>We've sent the details to your inbox. Your order ID is <b>GEX-24831</b>.</p><div><Link className="button primary" to="/orders">View my orders</Link><Link className="button outline" to="/gift-cards">Continue shopping</Link></div></main>} />
-    <Route path="/orders" element={<Orders />} />
-    <Route path="/orders/:id" element={<Orders detail />} />
-    <Route path="/wishlist" element={<Wishlist />} />
-    <Route path="/login" element={<AuthPage mode="login" />} />
-    <Route path="/register" element={<AuthPage mode="register" />} />
-    <Route path="/forgot-password" element={<AuthPage mode="forgot" />} />
-    <Route path="/dashboard" element={<Dashboard />} />
-    <Route path="/profile" element={<Dashboard profile />} />
-    <Route path="/wallet" element={<RequireUser><WalletPage /></RequireUser>} />
-    <Route path="/wallet/deposit" element={<RequireUser><WalletDepositPage /></RequireUser>} />
-    <Route path="/wallet/withdraw" element={<RequireUser><WalletWithdrawPage /></RequireUser>} />
-    <Route path="/wallet/convert" element={<RequireUser><WalletConvertPage /></RequireUser>} />
-    <Route path="/wallet/transactions/:transactionId" element={<RequireUser><WalletTransactionDetailPage /></RequireUser>} />
-    <Route path="/wallet/transactions" element={<RequireUser><WalletTransactionsPage /></RequireUser>} />
-    <Route path="/verification" element={<RequireUser><VerificationPage /></RequireUser>} />
-    <Route path="/gift-card-verification" element={<RequireUser><GiftCardVerificationPage /></RequireUser>} />
-    <Route path="/gift-card-verifications" element={<RequireUser><GiftCardVerificationHistoryPage /></RequireUser>} />
-    <Route path="/sell-method" element={<RequireUser><SellMethodPage /></RequireUser>} />
-    <Route path="/sell/instant" element={<RequireUser><InstantCashoutPage /></RequireUser>} />
-    <Route path="/sell/p2p" element={<RequireUser><P2PCreatePage /></RequireUser>} />
-    <Route path="/sell/auction" element={<RequireUser><AuctionCreatePage /></RequireUser>} />
-    <Route path="/my-listings" element={<RequireUser><MyListingsPage /></RequireUser>} />
-    <Route path="/my-bids" element={<RequireUser><MyBidsPage /></RequireUser>} />
-    <Route path="/transactions" element={<RequireUser><TransactionsPage /></RequireUser>} />
-    <Route path="/transactions/:id" element={<RequireUser><TransactionDetailPage /></RequireUser>} />
-    <Route path="/escrow/:escrowId" element={<RequireUser><EscrowDetailPage /></RequireUser>} />
-    <Route path="/my-escrows" element={<RequireUser><MyEscrowsPage /></RequireUser>} />
-    <Route path="/disputes" element={<RequireUser><DisputesPage /></RequireUser>} />
-    <Route path="/disputes/:id" element={<RequireUser><DisputeDetailPage /></RequireUser>} />
-    <Route path="/support" element={<SupportPage />} />
-    <Route path="/about" element={<SupportPage type="about" />} />
-    <Route path="/contact" element={<SupportPage type="contact" />} />
-    <Route path="/exchange-requests" element={<ExchangeRequests />} />
-    <Route path="*" element={<main className="page not-found"><p className="eyebrow">404</p><h1>That page took a little detour.</h1><Link className="button primary" to="/">Back to home</Link></main>} />
-  </Routes><Footer /></>
+  const [email, setEmail] = useState('')
+  if (user) return <Navigate to={user.role === 'admin' ? '/admin' : '/dashboard'} replace />
+  const submit = (event) => {
+    event.preventDefault()
+    if (!email.trim()) return
+    login(email.trim(), email.toLowerCase().includes('admin') ? 'Giftly Admin' : 'Giftly Member')
+    navigate(location.state?.from?.pathname || '/dashboard', { replace: true })
+  }
+  return <main className="auth-page"><section className="auth-art"><Brand /><div><p className="eyebrow">Welcome to Giftly</p><h1>Give More.<br /><em>Save More.</em></h1><p>Explore the marketplace and prototype exchange tools.</p></div><small>Prototype sign-in · no password or external identity provider</small></section><section className="auth-form"><p className="eyebrow">Local demo access</p><h2>Sign in</h2><p className="muted">Enter an email to create a local prototype session. Emails containing “admin” use the admin demo role.</p><form onSubmit={submit}><label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label><button className="button primary" type="submit">Continue <ArrowRight size={16} /></button></form><p className="mock-note"><ShieldCheck size={15} /> This is not production authentication. Do not use a real password.</p></section></main>
 }
-export default function App() { return <BrowserRouter><AuthProvider><WalletProvider><CartProvider><WishlistProvider><AppRoutes /></WishlistProvider></CartProvider></WalletProvider></AuthProvider></BrowserRouter> }
+
+function DashboardPage() {
+  const { user } = useAuth()
+  const { wallet, selectedCurrency, transactions } = useWallet()
+  const total = wallet ? getWalletSummary(wallet.userId, selectedCurrency).totalValue : 0
+  const verificationStatus = user?.verification?.identityStatus || 'Not Started'
+  const formatAmount = (currency, value) => {
+    try { return new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(value) || 0) }
+    catch { return `${currency} ${Number(value) || 0}` }
+  }
+  return <main className="page dashboard-page">
+    <header className="dashboard-welcome"><div><p className="eyebrow">Your Giftly account</p><h1>Welcome back, {user?.name || 'Giftly member'}</h1><p>Your overview of wallet and prototype exchange activity.</p></div><Link className="button primary" to="/marketplace">Explore marketplace <ArrowRight size={15} /></Link></header>
+    <div className="dashboard-metrics"><Link to="/wallet" className="dashboard-metric wallet-metric"><span className="dashboard-metric-icon"><WalletIcon size={18} /></span><small>Wallet balance · {selectedCurrency}</small><b>{formatAmount(selectedCurrency, total)}</b><span className="dashboard-metric-foot">Demo value · no real funds <ArrowRight size={14} /></span></Link><Link to="/verification" className="dashboard-metric"><span className="dashboard-metric-icon gold"><BadgeCheck size={18} /></span><small>Identity verification</small><b className="dashboard-status-text">{verificationStatus}</b><span className="dashboard-metric-foot">Prototype status <ArrowRight size={14} /></span></Link><div className="dashboard-metric"><span className="dashboard-metric-icon pink"><ShoppingBag size={18} /></span><small>Orders</small><b className="dashboard-status-text">Not connected</b><span className="dashboard-metric-foot">Order history is not available in this prototype</span></div></div>
+    <section className="dashboard-quick-section"><div className="dashboard-section-heading"><div><p className="eyebrow">Shortcuts</p><h2>Quick actions</h2></div></div><div className="dashboard-grid"><Link className="dashboard-card" to="/gift-cards"><span className="dashboard-card-icon"><Gift size={18} /></span><b>Browse gift cards</b><span>Explore the sample catalog</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/sell-method"><span className="dashboard-card-icon"><ArrowUpRight size={18} /></span><b>Sell a gift card</b><span>Start with card verification</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/wallet/deposit"><span className="dashboard-card-icon"><WalletIcon size={18} /></span><b>Add demo funds</b><span>Simulated wallet activity</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/gift-card-verification"><span className="dashboard-card-icon"><ShieldCheck size={18} /></span><b>Verify a gift card</b><span>Mock OCR and balance check</span><ChevronRight size={16} /></Link></div></section>
+    <section className="dashboard-transactions"><div className="dashboard-section-heading"><div><p className="eyebrow">Wallet ledger</p><h2>Recent transactions</h2></div><Link className="text-link" to="/wallet/transactions">View history <ArrowRight size={14} /></Link></div>{transactions.length ? <div className="dashboard-transaction-list">{transactions.slice(0, 4).map((item) => <Link to={`/wallet/transactions/${item.id}`} key={item.id}><span className="dashboard-transaction-icon"><WalletIcon size={16} /></span><span className="dashboard-transaction-copy"><b>{item.description || item.type.replaceAll('_', ' ')}</b><small>{new Date(item.createdAt).toLocaleDateString()} · {item.status}</small></span><strong>{formatAmount(item.currency, item.amount)}</strong><ChevronRight size={15} /></Link>)}</div> : <div className="dashboard-empty"><span>No wallet activity yet</span><Link to="/wallet">Open your prototype wallet <ArrowRight size={14} /></Link></div>}</section>
+    <TradingActivity />
+    <EscrowActivity />
+  </main>
+}
+
+function ProfilePage() {
+  const { user } = useAuth()
+  return <main className="page"><header className="page-header"><p className="eyebrow">Account settings</p><h1>Your profile</h1><p>Local prototype account details.</p></header><section className="panel profile-panel"><div><span>Name</span><b>{user?.name}</b></div><div><span>Email</span><b>{user?.email}</b></div><div><span>Role</span><b>{user?.role === 'admin' ? 'Admin demo' : 'Customer'}</b></div><p className="mock-note"><ShieldCheck size={15} /> Authentication and account data are stored locally for this prototype.</p><Link className="button outline" to="/verification">Manage verification</Link></section></main>
+}
+
+function SupportPage() {
+  return <main className="page"><header className="page-header"><p className="eyebrow">Giftly Exchange</p><h1>Support</h1><p>Support messaging is not connected in this prototype. For now, review the relevant workflow notice or return to your dashboard.</p></header><Link className="button outline" to="/dashboard">Back to dashboard</Link></main>
+}
+
+function LegacySellRoute() {
+  const location = useLocation()
+  return <Navigate to={`/sell-method${location.search}`} replace />
+}
+
+function RequireCustomer() {
+  const { user } = useAuth()
+  const location = useLocation()
+  if (!user) return <Navigate to="/login" state={{ from: location }} replace />
+  if (user.role === 'admin') return <Navigate to="/admin" replace />
+  return <Outlet />
+}
+
+function RequireAdmin() {
+  const { user } = useAuth()
+  const location = useLocation()
+  if (!user) return <Navigate to="/login" state={{ from: location }} replace />
+  if (user.role !== 'admin') return <Navigate to="/dashboard" replace />
+  return <Outlet />
+}
+
+function AdminLayout() {
+  const { user, logout } = useAuth()
+  const adminLinks = [
+    ['/admin', LayoutDashboard, 'Overview'], ['/admin/verifications', BadgeCheck, 'KYC reviews'],
+    ['/admin/gift-card-verifications', Gift, 'Gift card checks'], ['/admin/trading', BriefcaseBusiness, 'Trading'],
+    ['/admin/escrow', ShieldCheck, 'Escrow'], ['/admin/disputes', ShieldCheck, 'Disputes'],
+    ['/admin/wallet', WalletIcon, 'Wallet'],
+  ]
+  return <div className="admin-layout"><aside className="admin-sidebar"><Brand /><span className="admin-label">Operations</span>{adminLinks.map(([href, Icon, label]) => <NavLink end={href === '/admin'} to={href} key={href}><Icon size={16} />{label}</NavLink>)}<Link className="back-store" to="/"><ArrowRight size={15} /> Back to storefront</Link></aside><div className="admin-content"><header className="admin-top"><span>Giftly Exchange · Prototype operations</span><span className="admin-user"><span className="avatar">{user?.name?.slice(0, 1) || 'A'}</span>{user?.name}<button className="admin-signout" onClick={logout}>Sign out</button></span></header><Outlet /></div></div>
+}
+
+function AdminHome() {
+  const adminCards = [
+    ['/admin/verifications', 'Identity Verification', 'Review mock identity submissions'],
+    ['/admin/gift-card-verifications', 'Gift Card Verification', 'Review simulated card checks'],
+    ['/admin/trading', 'Trading', 'Monitor listings, auctions, and transactions'],
+    ['/admin/escrow', 'Escrow', 'Review prototype transaction states'],
+    ['/admin/disputes', 'Disputes', 'Review reported transaction issues'],
+    ['/admin/wallet', 'Wallet', 'View simulated wallet activity'],
+  ]
+  return <main className="admin-page"><div className="admin-heading"><div><p className="eyebrow">Giftly Exchange</p><h1>Operations overview</h1><p className="admin-verification-intro">Prototype workflows only. No real payments, identity checks, or escrow custody are connected.</p></div><span className="admin-prototype-label"><ShieldCheck size={14} /> Demo environment</span></div><div className="stats-grid">{adminCards.map(([href, title, text]) => <Link className="stat-card admin-quick-card" to={href} key={href}><span><ArrowRight size={17} /></span><b>{title}</b><small>{text}</small></Link>)}</div></main>
+}
+
+function NotFoundPage() {
+  return <main className="page"><p className="eyebrow">Page not found</p><h1>That Giftly page is not available.</h1><p className="muted">This route may not be part of the current prototype.</p><Link className="button primary" to="/">Return home</Link></main>
+}
+
+function ApplicationRoutes() {
+  return <Routes>
+    <Route element={<StorefrontLayout />}>
+      <Route index element={<StoreHome />} />
+      <Route path="gift-cards" element={<CatalogPage />} />
+      <Route path="categories/:category" element={<CatalogPage />} />
+      <Route path="gift-cards/:id" element={<GiftCardDetailPage />} />
+      <Route path="offers" element={<OffersPage />} />
+      <Route path="marketplace" element={<MarketplaceListingsPage />} />
+      <Route path="marketplace/:listingId" element={<ListingDetailPage />} />
+      <Route path="auctions" element={<AuctionMarketplacePage />} />
+      <Route path="auctions/:auctionId" element={<AuctionDetailPage />} />
+      <Route path="login" element={<LoginPage />} />
+      <Route path="register" element={<LoginPage />} />
+      <Route path="support" element={<SupportPage />} />
+      <Route path="cart" element={<CartPage />} />
+      <Route path="sell-gift-card" element={<LegacySellRoute />} />
+      <Route element={<RequireCustomer />}>
+        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="wishlist" element={<WishlistPage />} />
+        <Route path="verification" element={<VerificationPage />} />
+        <Route path="gift-card-verification" element={<GiftCardVerificationPage />} />
+        <Route path="gift-card-verifications" element={<GiftCardVerificationHistoryPage />} />
+        <Route path="sell-method" element={<SellMethodPage />} />
+        <Route path="sell/instant" element={<InstantCashoutPage />} />
+        <Route path="sell/p2p" element={<P2PCreatePage />} />
+        <Route path="sell/auction" element={<AuctionCreatePage />} />
+        <Route path="my-listings" element={<MyListingsPage />} />
+        <Route path="my-bids" element={<MyBidsPage />} />
+        <Route path="transactions" element={<TransactionsPage />} />
+        <Route path="transactions/:id" element={<TransactionDetailPage />} />
+        <Route path="my-escrows" element={<MyEscrowsPage />} />
+        <Route path="escrow/:escrowId" element={<EscrowDetailPage />} />
+        <Route path="disputes" element={<DisputesPage />} />
+        <Route path="disputes/:id" element={<DisputeDetailPage />} />
+        <Route path="wallet" element={<WalletPage />} />
+        <Route path="wallet/deposit" element={<WalletDepositPage />} />
+        <Route path="wallet/withdraw" element={<WalletWithdrawPage />} />
+        <Route path="wallet/convert" element={<WalletConvertPage />} />
+        <Route path="wallet/transactions" element={<WalletTransactionsPage />} />
+        <Route path="wallet/transactions/:transactionId" element={<WalletTransactionDetailPage />} />
+      </Route>
+    </Route>
+    <Route element={<RequireAdmin />}>
+      <Route path="admin" element={<AdminLayout />}>
+        <Route index element={<AdminHome />} />
+        <Route path="verifications" element={<AdminVerificationsPage />} />
+        <Route path="gift-card-verifications" element={<AdminGiftCardVerificationsPage />} />
+        <Route path="trading" element={<AdminTradingPage />} />
+        <Route path="escrow" element={<AdminEscrowDashboardPage />} />
+        <Route path="escrow/:escrowId" element={<EscrowDetailPage />} />
+        <Route path="disputes" element={<AdminDisputesPage />} />
+        <Route path="wallet" element={<AdminWalletPage />} />
+      </Route>
+    </Route>
+    <Route path="*" element={<NotFoundPage />} />
+  </Routes>
+}
+
+function App() {
+  return <AuthProvider><CartProvider><WishlistProvider><WalletProvider><BrowserRouter><ApplicationRoutes /></BrowserRouter></WalletProvider></WishlistProvider></CartProvider></AuthProvider>
+}
+
+export default App
