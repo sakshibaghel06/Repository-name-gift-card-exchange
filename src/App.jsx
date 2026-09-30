@@ -186,10 +186,93 @@ function GiftCardDetailPage() {
   return <main className="page product-page"><Link className="back-link" to="/gift-cards">← Back to gift cards</Link><div className="product-detail"><div className="product-preview product-preview-premium" style={{ background: card.color, color: card.accent }}><div className="product-preview-top"><span className="gift-logo" style={{ background: card.accent }}>{card.logo}</span><span>GIFTLY EXCHANGE</span></div><div><small>DIGITAL GIFT CARD</small><b>{card.brand}</b><strong>{formatINR(card.value)}</strong></div><span className="product-preview-circles" /></div><section className="product-copy"><p className="eyebrow">{card.category} · Sample catalog</p><h1>{card.name}</h1><div className="product-brand-rating"><b>{card.brand}</b><span>★ {card.rating} <small>sample rating</small></span></div><p>Give someone the freedom to choose. This listing uses sample catalog data for the Giftly Exchange prototype.</p><div className="product-value-box"><div><span>Selling price</span><b>{formatINR(price)}</b></div><div><span>Face value</span><del>{formatINR(card.value)}</del></div><span className="product-discount">Save {card.discount}%</span></div><div className="product-availability"><CircleCheck size={16} /><span><b>Available in sample catalog</b><small>Real inventory and fulfillment are not connected.</small></span></div><div className="product-buy-row"><label className="quantity-control">Quantity<select value={quantity} onChange={(event) => setQuantity(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((count) => <option key={count}>{count}</option>)}</select></label><button className="button outline product-save" onClick={() => toggleWishlist(card)} aria-label={saved ? 'Remove from wishlist' : 'Add to wishlist'}><Heart size={17} fill={saved ? 'currentColor' : 'none'} />{saved ? 'Saved' : 'Wishlist'}</button></div><div className="product-actions"><button className="button outline" onClick={addSelected}><ShoppingBag size={16} /> Add to bag</button><button className="button primary" onClick={() => { addSelected(); navigate('/cart') }}>Buy now <ArrowRight size={16} /></button></div>{notice && <p className="product-added-note" role="status">{notice}</p>}<div className="product-assurance"><div><PackageCheck size={17} /><span><b>Delivery details</b><small>Digital delivery is not active in this prototype.</small></span></div><div><LockKeyhole size={17} /><span><b>Safe to explore</b><small>Do not enter payment or card credentials here.</small></span></div></div><p className="mock-note"><ShieldCheck size={15} /> No real checkout, payment, or gift-card fulfillment is connected.</p></section></div><section className="related-products"><div className="section-heading"><div><p className="eyebrow">Keep exploring</p><h2>Related gift cards</h2></div><Link className="text-link" to={`/categories/${encodeURIComponent(card.category)}`}>More in {card.category} <ArrowRight size={14} /></Link></div><ProductGrid cards={giftCards.filter((item) => item.id !== card.id && item.category === card.category).slice(0, 3)} /></section></main>
 }
 
+function getSavedOrders() {
+  try {
+    return JSON.parse(localStorage.getItem('giftly-orders') || '[]')
+  } catch {
+    return []
+  }
+}
+
+function buildDemoOrder({ cart, subtotal, fees, total, user, form }) {
+  const createdAt = new Date()
+  const stamp = Date.now()
+  return {
+    id: `GEX-${String(stamp).slice(-6)}`,
+    date: createdAt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    status: 'Processing',
+    total,
+    subtotal,
+    fees,
+    items: cart.map((item) => ({ ...item, price: item.price, quantity: item.quantity })),
+    customer: user?.name || form.name || 'Giftly member',
+    email: user?.email || form.email,
+    shipping: { address: form.address || 'Demo address', city: form.city || 'Bengaluru', state: form.state || 'Karnataka' },
+    paymentMethod: form.paymentMethod,
+    createdAt: createdAt.toISOString(),
+    href: '/orders',
+  }
+}
+
 function CartPage() {
+  const { user } = useAuth()
   const { cart, updateQuantity, removeFromCart } = useCart()
   const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0)
-  return <main className="page"><header className="page-header"><p className="eyebrow">Your selections</p><h1>Shopping bag</h1><p>Sample catalog items stay in this browser for the prototype.</p></header>{cart.length ? <div className="checkout-layout"><section className="cart-list">{cart.map((item) => <article className="cart-item" key={item.id}><div className="mini-visual" style={{ background: item.accent }}>{item.logo}</div><div className="cart-item-copy"><b>{item.name}</b><span>{item.brand}</span><strong>{formatINR(item.price)}</strong></div><label>Quantity <select value={item.quantity} onChange={(event) => updateQuantity(item.id, Number(event.target.value))}>{[1, 2, 3, 4, 5].map((count) => <option key={count}>{count}</option>)}</select></label><button className="icon-button" onClick={() => removeFromCart(item.id)} aria-label={`Remove ${item.name}`}>Remove</button></article>)}</section><aside className="summary"><h3>Order summary</h3><div><span>Subtotal</span><b>{formatINR(subtotal)}</b></div><p className="mock-note"><ShieldCheck size={15} /> Checkout and payment are not connected in this prototype.</p><Link className="button primary full" to="/marketplace">Continue exploring</Link></aside></div> : <div className="empty-state"><ShoppingBag size={25} /><h2>Your bag is empty</h2><p>Find something thoughtful in the gift card catalog.</p><Link className="button primary" to="/gift-cards">Browse gift cards</Link></div>}</main>
+  return <main className="page"><header className="page-header"><p className="eyebrow">Your selections</p><h1>Shopping bag</h1><p>Sample catalog items stay in this browser for the prototype.</p></header>{cart.length ? <div className="checkout-layout"><section className="cart-list">{cart.map((item) => <article className="cart-item" key={item.id}><div className="mini-visual" style={{ background: item.accent }}>{item.logo}</div><div className="cart-item-copy"><b>{item.name}</b><span>{item.brand}</span><strong>{formatINR(item.price)}</strong></div><label>Quantity <select value={item.quantity} onChange={(event) => updateQuantity(item.id, Number(event.target.value))}>{[1, 2, 3, 4, 5].map((count) => <option key={count}>{count}</option>)}</select></label><button className="icon-button" onClick={() => removeFromCart(item.id)} aria-label={`Remove ${item.name}`}>Remove</button></article>)}</section><aside className="summary"><h3>Order summary</h3><div><span>Subtotal</span><b>{formatINR(subtotal)}</b></div><p className="mock-note"><ShieldCheck size={15} /> Checkout and payment are not connected in this prototype.</p><Link className="button primary full" to={user ? '/checkout' : '/login'} state={user ? undefined : { from: { pathname: '/checkout' } }}>Proceed to checkout</Link><Link className="button outline full" to="/marketplace" style={{ marginTop: '10px' }}>Continue exploring</Link></aside></div> : <div className="empty-state"><ShoppingBag size={25} /><h2>Your bag is empty</h2><p>Find something thoughtful in the gift card catalog.</p><Link className="button primary" to="/gift-cards">Browse gift cards</Link></div>}</main>
+}
+
+function CheckoutPage() {
+  const { user } = useAuth()
+  const { cart, clearCart } = useCart()
+  const navigate = useNavigate()
+  const [form, setForm] = useState({ email: user?.email || '', name: user?.name || '', address: '', city: '', state: '', paymentMethod: 'demo-wallet' })
+  const [submitting, setSubmitting] = useState(false)
+  const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0)
+  const fees = Math.round(subtotal * 0.02)
+  const total = subtotal + fees
+
+  if (!cart.length) {
+    return <main className="page"><header className="page-header"><p className="eyebrow">Checkout</p><h1>Your bag is empty</h1><p>Add a gift card to continue.</p></header><Link className="button primary" to="/gift-cards">Browse gift cards</Link></main>
+  }
+
+  const handleChange = (field, value) => setForm((current) => ({ ...current, [field]: value }))
+
+  const handlePlaceOrder = (event) => {
+    event.preventDefault()
+    setSubmitting(true)
+    const nextOrder = buildDemoOrder({ cart, subtotal, fees, total, user, form })
+    const currentOrders = getSavedOrders()
+    localStorage.setItem('giftly-orders', JSON.stringify([nextOrder, ...currentOrders]))
+    clearCart()
+    navigate(`/order-success?order=${encodeURIComponent(nextOrder.id)}`)
+  }
+
+  return <main className="page"><header className="page-header"><p className="eyebrow">Checkout</p><h1>Secure your order</h1><p>Prototype checkout only. No real payment or provider is connected.</p></header><form className="checkout-layout" onSubmit={handlePlaceOrder}><section className="panel form-panel"><h2>Delivery details</h2><label>Name<input required value={form.name} onChange={(event) => handleChange('name', event.target.value)} placeholder="Your full name" /></label><label>Email<input required type="email" value={form.email} onChange={(event) => handleChange('email', event.target.value)} placeholder="you@example.com" /></label><label>Address<input required value={form.address} onChange={(event) => handleChange('address', event.target.value)} placeholder="Street address" /></label><div className="form-grid"><label>City<input required value={form.city} onChange={(event) => handleChange('city', event.target.value)} placeholder="Bengaluru" /></label><label>State<input value={form.state} onChange={(event) => handleChange('state', event.target.value)} placeholder="Karnataka" /></label></div><h2>Payment</h2><div className="payment-options">{['demo-wallet', 'upi', 'card', 'bank'].map((method) => <button type="button" key={method} className={form.paymentMethod === method ? 'selected' : ''} onClick={() => handleChange('paymentMethod', method)}>{method === 'demo-wallet' ? 'Demo wallet' : method.toUpperCase()}</button>)}</div><p className="mock-note"><ShieldCheck size={15} /> Secure delivery, payment, and fulfilment remain prototype-only in this flow.</p></section><aside className="summary"><h3>Order summary</h3>{cart.map((item) => <div key={item.id}><span>{item.name}</span><b>{formatINR(item.price * item.quantity)}</b></div>)}<div><span>Subtotal</span><b>{formatINR(subtotal)}</b></div><div><span>Service fee</span><b>{formatINR(fees)}</b></div><hr /><div className="summary-total"><span>Total</span><b>{formatINR(total)}</b></div><button className="button primary full" type="submit" disabled={submitting}>{submitting ? 'Placing order...' : 'Place order'}</button><Link className="button outline full" to="/cart" style={{ marginTop: '10px' }}>Edit bag</Link></aside></form></main>
+}
+
+function OrderSuccessPage() {
+  const [searchParams] = useSearchParams()
+  const orderId = searchParams.get('order')
+  return <main className="page"><section className="success-page"><p className="eyebrow">Order confirmed</p><h1>Thank you for shopping with Giftly.</h1><p>Your prototype order {orderId ? `#${orderId}` : 'has been received'} is being prepared.</p><div className="button-row"><Link className="button primary" to="/orders">View orders</Link><Link className="button outline" to="/gift-cards">Keep shopping</Link></div></section></main>
+}
+
+function OrdersPage() {
+  const [orders, setOrders] = useState(() => getSavedOrders())
+  const [searchParams] = useSearchParams()
+  useEffect(() => {
+    const refresh = () => setOrders(getSavedOrders())
+    window.addEventListener('storage', refresh)
+    return () => window.removeEventListener('storage', refresh)
+  }, [])
+  const latestId = searchParams.get('order')
+  return <main className="page"><header className="page-header"><p className="eyebrow">Your orders</p><h1>Order history</h1><p>Prototype order records stay in local storage for this demo.</p></header>{orders.length ? <div className="orders-panel">{orders.map((order) => <div className="order-row" key={order.id}><span className="order-thumb" style={{ background: order.status === 'Processing' ? '#5d45d6' : '#3d9565' }}>{order.id.slice(-2)}</span><div className="order-copy"><b>{order.id}</b><small>{order.date} · {order.status}</small></div><div className="order-meta"><strong>{formatINR(order.total)}</strong><Link className="button tiny" to={`/orders/${order.id}`}>View order</Link></div></div>)}{latestId && <p className="mock-note"><ShieldCheck size={15} /> Your latest order {latestId} is now in the prototype order history.</p>}</div> : <div className="empty-state"><ShoppingBag size={25} /><h2>No orders yet</h2><p>Your completed gifts will show up here.</p><Link className="button primary" to="/gift-cards">Browse gifts</Link></div>}</main>
+}
+
+function OrderDetailPage() {
+  const { orderId } = useParams()
+  const order = getSavedOrders().find((item) => item.id === orderId)
+  if (!order) return <main className="page"><header className="page-header"><p className="eyebrow">Order not found</p><h1>We could not find that order.</h1><Link className="button primary" to="/orders">Back to orders</Link></header></main>
+  return <main className="page"><header className="page-header"><p className="eyebrow">Order detail</p><h1>{order.id}</h1><p>Status: {order.status}</p></header><section className="panel"><div className="summary" style={{ position: 'static' }}><div><span>Placed</span><b>{order.date}</b></div><div><span>Delivery</span><b>{order.shipping?.city || 'Demo city'}</b></div><div><span>Payment</span><b>{order.paymentMethod || 'Demo wallet'}</b></div><hr /><div className="summary-total"><span>Grand total</span><b>{formatINR(order.total)}</b></div></div></section><section className="cart-list" style={{ marginTop: '20px' }}>{order.items.map((item) => <article className="cart-item" key={`${order.id}-${item.id}`}><div className="mini-visual" style={{ background: item.accent }}>{item.logo}</div><div className="cart-item-copy"><b>{item.name}</b><span>{item.brand} × {item.quantity}</span><strong>{formatINR(item.price * item.quantity)}</strong></div></article>)}</section><Link className="button outline" to="/orders" style={{ marginTop: '20px' }}>Back to all orders</Link></main>
 }
 
 function WishlistPage() {
@@ -223,7 +306,7 @@ function DashboardPage() {
   }
   return <main className="page dashboard-page">
     <header className="dashboard-welcome"><div><p className="eyebrow">Your Giftly account</p><h1>Welcome back, {user?.name || 'Giftly member'}</h1><p>Your overview of wallet and prototype exchange activity.</p></div><Link className="button primary" to="/marketplace">Explore marketplace <ArrowRight size={15} /></Link></header>
-    <div className="dashboard-metrics"><Link to="/wallet" className="dashboard-metric wallet-metric"><span className="dashboard-metric-icon"><WalletIcon size={18} /></span><small>Wallet balance · {selectedCurrency}</small><b>{formatAmount(selectedCurrency, total)}</b><span className="dashboard-metric-foot">Demo value · no real funds <ArrowRight size={14} /></span></Link><Link to="/verification" className="dashboard-metric"><span className="dashboard-metric-icon gold"><BadgeCheck size={18} /></span><small>Identity verification</small><b className="dashboard-status-text">{verificationStatus}</b><span className="dashboard-metric-foot">Prototype status <ArrowRight size={14} /></span></Link><div className="dashboard-metric"><span className="dashboard-metric-icon pink"><ShoppingBag size={18} /></span><small>Orders</small><b className="dashboard-status-text">Not connected</b><span className="dashboard-metric-foot">Order history is not available in this prototype</span></div></div>
+    <div className="dashboard-metrics"><Link to="/wallet" className="dashboard-metric wallet-metric"><span className="dashboard-metric-icon"><WalletIcon size={18} /></span><small>Wallet balance · {selectedCurrency}</small><b>{formatAmount(selectedCurrency, total)}</b><span className="dashboard-metric-foot">Demo value · no real funds <ArrowRight size={14} /></span></Link><Link to="/verification" className="dashboard-metric"><span className="dashboard-metric-icon gold"><BadgeCheck size={18} /></span><small>Identity verification</small><b className="dashboard-status-text">{verificationStatus}</b><span className="dashboard-metric-foot">Prototype status <ArrowRight size={14} /></span></Link><Link to="/orders" className="dashboard-metric"><span className="dashboard-metric-icon pink"><ShoppingBag size={18} /></span><small>Orders</small><b className="dashboard-status-text">{getSavedOrders().length}</b><span className="dashboard-metric-foot">View your recent prototype orders <ArrowRight size={14} /></span></Link></div>
     <section className="dashboard-quick-section"><div className="dashboard-section-heading"><div><p className="eyebrow">Shortcuts</p><h2>Quick actions</h2></div></div><div className="dashboard-grid"><Link className="dashboard-card" to="/gift-cards"><span className="dashboard-card-icon"><Gift size={18} /></span><b>Browse gift cards</b><span>Explore the sample catalog</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/sell-method"><span className="dashboard-card-icon"><ArrowUpRight size={18} /></span><b>Sell a gift card</b><span>Start with card verification</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/wallet/deposit"><span className="dashboard-card-icon"><WalletIcon size={18} /></span><b>Add demo funds</b><span>Simulated wallet activity</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/gift-card-verification"><span className="dashboard-card-icon"><ShieldCheck size={18} /></span><b>Verify a gift card</b><span>Mock OCR and balance check</span><ChevronRight size={16} /></Link></div></section>
     <section className="dashboard-transactions"><div className="dashboard-section-heading"><div><p className="eyebrow">Wallet ledger</p><h2>Recent transactions</h2></div><Link className="text-link" to="/wallet/transactions">View history <ArrowRight size={14} /></Link></div>{transactions.length ? <div className="dashboard-transaction-list">{transactions.slice(0, 4).map((item) => <Link to={`/wallet/transactions/${item.id}`} key={item.id}><span className="dashboard-transaction-icon"><WalletIcon size={16} /></span><span className="dashboard-transaction-copy"><b>{item.description || item.type.replaceAll('_', ' ')}</b><small>{new Date(item.createdAt).toLocaleDateString()} · {item.status}</small></span><strong>{formatAmount(item.currency, item.amount)}</strong><ChevronRight size={15} /></Link>)}</div> : <div className="dashboard-empty"><span>No wallet activity yet</span><Link to="/wallet">Open your prototype wallet <ArrowRight size={14} /></Link></div>}</section>
     <TradingActivity />
@@ -308,6 +391,10 @@ function ApplicationRoutes() {
       <Route path="cart" element={<CartPage />} />
       <Route path="sell-gift-card" element={<LegacySellRoute />} />
       <Route element={<RequireCustomer />}>
+        <Route path="checkout" element={<CheckoutPage />} />
+        <Route path="orders" element={<OrdersPage />} />
+        <Route path="orders/:orderId" element={<OrderDetailPage />} />
+        <Route path="order-success" element={<OrderSuccessPage />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="wishlist" element={<WishlistPage />} />
