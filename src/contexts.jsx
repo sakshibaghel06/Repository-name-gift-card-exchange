@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, startTransition, useContext, useEffect, useState } from 'react'
+import { createContext, startTransition, useCallback, useContext, useEffect, useState } from 'react'
+import { supabase } from './lib/supabase'
 import {
   convertCurrency, getTransactions, getWallet, setPreferredCurrency as savePreferredCurrency,
   simulateDeposit, simulateWithdrawal, WALLET_CHANGE_EVENT,
@@ -35,6 +36,7 @@ export function WishlistProvider({ children }) {
 export const useWishlist = () => useContext(WishlistContext)
 
 const AuthContext = createContext(null)
+
 const defaultVerification = {
   emailVerified: true,
   phoneVerified: false,
@@ -49,42 +51,347 @@ const defaultVerification = {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const savedUser = stored('giftly-user', null)
-    return savedUser ? { ...savedUser, verification: { ...defaultVerification, ...savedUser.verification } } : null
-  })
-  const [allGiftCardVerifications, setAllGiftCardVerifications] = useState(() => stored('giftly-card-verifications', []))
-  useEffect(() => user ? localStorage.setItem('giftly-user', JSON.stringify(user)) : localStorage.removeItem('giftly-user'), [user])
-  useEffect(() => localStorage.setItem('giftly-card-verifications', JSON.stringify(allGiftCardVerifications)), [allGiftCardVerifications])
+  const [user, setUser] = useState(null)
+  const [authReady, setAuthReady] = useState(false)
+
+  const [allGiftCardVerifications, setAllGiftCardVerifications] =
+    useState(() =>
+      stored('giftly-card-verifications', [])
+    )
+
+  const normalizeRole = (role) => {
+    const validRoles = [
+      'customer',
+      'admin',
+      'support',
+      'compliance',
+      'operations',
+    ]
+
+    return validRoles.includes(role) ? role : 'customer'
+  }
+
+  /* -------------------------------------------------------
+     Convert Supabase user into Giftly user
+  ------------------------------------------------------- */
+
+  const createGiftlyUser = useCallback((supabaseUser, profile = null) => {
+    if (!supabaseUser) return null
+
+    const email = supabaseUser.email || profile?.email || ''
+    const records = stored(
+      'giftly-verification-records',
+      {}
+    )
+
+    return {
+      id: supabaseUser.id,
+      email,
+      name:
+        profile?.full_name ||
+        supabaseUser.user_metadata?.name ||
+        supabaseUser.user_metadata?.full_name ||
+        email.split('@')[0] ||
+        'Giftly Member',
+      role: normalizeRole(
+        profile?.role ||
+          supabaseUser.user_metadata?.role ||
+          supabaseUser.app_metadata?.role ||
+          'customer'
+      ),
+      verification: {
+        ...defaultVerification,
+        ...records[email],
+      },
+    }
+  }, [])
+
+  /* -------------------------------------------------------
+     Load Supabase session + listen for auth changes
+  ------------------------------------------------------- */
+
+  const syncUserFromSession = useCallback(
+    async (session) => {
+      const supabaseUser = session?.user || null
+
+      if (!supabaseUser) {
+        setUser(null)
+        setAuthReady(true)
+        return
+      }
+
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select(
+            'id, email, full_name, role, phone, country, avatar_url, status'
+          )
+          .eq('id', supabaseUser.id)
+          .maybeSingle()
+
+        if (error && error.code !== 'PGRST116') {
+          throw error
+        }
+
+        setUser(createGiftlyUser(supabaseUser, profile))
+      } catch (error) {
+        console.error('Profile loading error:', error)
+        setUser(createGiftlyUser(supabaseUser, null))
+      } finally {
+        setAuthReady(true)
+      }
+    },
+    [createGiftlyUser]
+  )
+
+  useEffect(() => {
+    let mounted = true
+
+    const loadSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!mounted) return
+
+        await syncUserFromSession(session)
+      } catch (error) {
+        console.error(
+          'Supabase session error:',
+          error
+        )
+        if (mounted) {
+          setUser(null)
+          setAuthReady(true)
+        }
+      }
+    }
+
+    loadSession()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!mounted) return
+        syncUserFromSession(session)
+      }
+    )
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [syncUserFromSession])
+
+  /* -------------------------------------------------------
+     Keep Giftly user data locally available
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(
+        'giftly-user',
+        JSON.stringify(user)
+      )
+    } else {
+      localStorage.removeItem('giftly-user')
+    }
+  }, [user])
+
+  /* -------------------------------------------------------
+     Save verification records
+  ------------------------------------------------------- */
+
   useEffect(() => {
     if (!user) return
-    const records = stored('giftly-verification-records', {})
-    localStorage.setItem('giftly-verification-records', JSON.stringify({ ...records, [user.email]: user.verification }))
+
+    const records = stored(
+      'giftly-verification-records',
+      {}
+    )
+
+    localStorage.setItem(
+      'giftly-verification-records',
+      JSON.stringify({
+        ...records,
+        [user.email]: user.verification,
+      })
+    )
   }, [user])
-  const login = (email, name = 'Aarav Mehta') => {
-    const records = stored('giftly-verification-records', {})
-    setUser({ email, name, role: email.includes('admin') ? 'admin' : 'customer', verification: { ...defaultVerification, ...records[email] } })
+
+  /* -------------------------------------------------------
+     Supabase passwordless login
+  ------------------------------------------------------- */
+
+  const login = async (email, name = '', mode = 'login') => {
+    const cleanEmail = (email || '').trim().toLowerCase()
+
+    if (!cleanEmail) {
+      throw new Error('Please enter your email address.')
+    }
+
+    const cleanName = (name || '').trim()
+    const otpOptions = {
+      data: {
+        name:
+          cleanName ||
+          cleanEmail.split('@')[0] ||
+          'Giftly Member',
+        role:
+          mode === 'register' ? 'customer' : undefined,
+      },
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: cleanEmail,
+      options: otpOptions,
+    })
+
+    if (error) {
+      throw error
+    }
   }
-  const updateVerification = (changes) => setUser((current) => current ? { ...current, verification: { ...defaultVerification, ...current.verification, ...changes } } : current)
+
+  const register = async (email, name) =>
+    login(email, name, 'register')
+
+  /* -------------------------------------------------------
+     Update user verification
+  ------------------------------------------------------- */
+
+  const updateVerification = (changes) =>
+    setUser((current) =>
+      current
+        ? {
+            ...current,
+
+            verification: {
+              ...defaultVerification,
+              ...current.verification,
+              ...changes,
+            },
+          }
+        : current
+    )
+
+  /* -------------------------------------------------------
+     Gift card verification
+  ------------------------------------------------------- */
+
   const saveGiftCardVerification = (record) => {
     const allowedFields = [
-      'id', 'referenceId', 'brand', 'country', 'currency', 'cardType',
-      'maskedCardNumber', 'verificationStatus', 'balanceStatus', 'mockBalance',
-      'cardStatus', 'reason', 'submittedAt', 'verifiedAt', 'riskStatus',
-      'riskFlags', 'detailsVerified',
+      'id',
+      'referenceId',
+      'brand',
+      'country',
+      'currency',
+      'cardType',
+      'maskedCardNumber',
+      'verificationStatus',
+      'balanceStatus',
+      'mockBalance',
+      'cardStatus',
+      'reason',
+      'submittedAt',
+      'verifiedAt',
+      'riskStatus',
+      'riskFlags',
+      'detailsVerified',
     ]
-    const safeRecord = Object.fromEntries(allowedFields.filter((field) => field in record).map((field) => [field, record[field]]))
+
+    const safeRecord = Object.fromEntries(
+      allowedFields
+        .filter((field) => field in record)
+        .map((field) => [
+          field,
+          record[field],
+        ])
+    )
+
     safeRecord.userId = user?.email || ''
-    safeRecord.userName = user?.name || 'Giftly member'
-    setAllGiftCardVerifications((current) => [safeRecord, ...current.filter((item) => item.id !== safeRecord.id)])
+    safeRecord.userName =
+      user?.name || 'Giftly member'
+
+    setAllGiftCardVerifications(
+      (current) => [
+        safeRecord,
+        ...current.filter(
+          (item) => item.id !== safeRecord.id
+        ),
+      ]
+    )
+
     return safeRecord
   }
-  const updateGiftCardVerification = (id, changes) => setAllGiftCardVerifications((current) => current.map((record) => record.id === id ? { ...record, ...changes } : record))
-  const giftCardVerifications = allGiftCardVerifications.filter((record) => record.userId === user?.email)
-  const logout = () => setUser(null)
-  return <AuthContext.Provider value={{ user, login, logout, updateVerification, giftCardVerifications, allGiftCardVerifications, saveGiftCardVerification, updateGiftCardVerification }}>{children}</AuthContext.Provider>
+
+  const updateGiftCardVerification = (
+    id,
+    changes
+  ) =>
+    setAllGiftCardVerifications(
+      (current) =>
+        current.map((record) =>
+          record.id === id
+            ? {
+                ...record,
+                ...changes,
+              }
+            : record
+        )
+    )
+
+  const giftCardVerifications =
+    allGiftCardVerifications.filter(
+      (record) =>
+        record.userId === user?.email
+    )
+
+  /* -------------------------------------------------------
+     Logout
+  ------------------------------------------------------- */
+
+  const logout = async () => {
+    const { error } =
+      await supabase.auth.signOut()
+
+    if (error) {
+      console.error(
+        'Supabase logout error:',
+        error
+      )
+    }
+
+    setUser(null)
+  }
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        authReady,
+        login,
+        register,
+        logout,
+        updateVerification,
+        giftCardVerifications,
+        allGiftCardVerifications,
+        saveGiftCardVerification,
+        updateGiftCardVerification,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  )
 }
-export const useAuth = () => useContext(AuthContext)
+
+export const useAuth = () =>
+  useContext(AuthContext)
+
+/* =========================================================
+   WALLET
+========================================================= */
 
 const WalletContext = createContext(null)
 export function WalletProvider({ children }) {

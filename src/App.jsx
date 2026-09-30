@@ -6,7 +6,7 @@ import {
   LockKeyhole, LogOut, Menu, PackageCheck, Search, Settings2, ShieldAlert,
   ShieldCheck, ShoppingBag, Sparkles, Wallet as WalletIcon, X,
 } from 'lucide-react'
-import { formatINR } from './data'
+import { formatINR, offers as prototypeOffers } from './data'
 import { AuthProvider, CartProvider, WishlistProvider, WalletProvider, useAuth, useCart, useWallet, useWishlist } from './contexts'
 import { VerificationPage, AdminVerificationsPage } from './Verification'
 import { GiftCardVerificationPage, GiftCardVerificationHistoryPage, AdminGiftCardVerificationsPage } from './GiftCardVerification'
@@ -25,7 +25,7 @@ import { LegalPage } from './LegalPages'
 import { RegionCurrencyControls } from './GlobalPreferences'
 import { getWalletSummary } from './services/walletService'
 import { getUnreadCount, NOTIFICATION_CHANGE_EVENT } from './services/notificationService'
-import { getPublicCatalog } from './services/adminPrototypeService'
+import { getPublicCatalog } from './services/catalogService'
 import heroImage from './assets/hero.png'
 
 function Brand() {
@@ -98,7 +98,7 @@ function ProductCard({ card }) {
       </Link>
       <button className={`product-wishlist ${saved ? 'saved' : ''}`} onClick={() => toggleWishlist(card)} aria-label={saved ? `Remove ${card.name} from wishlist` : `Add ${card.name} to wishlist`}><Heart size={17} fill={saved ? 'currentColor' : 'none'} /></button>
     </div>
-    <div className="gift-info"><div className="product-meta"><span>{card.category}</span><span aria-label={`${card.rating} out of 5 stars`}>★ {card.rating}</span></div><Link to={`/gift-cards/${card.id}`}><h3>{card.name}</h3></Link><div className="product-price"><b>{formatINR(Math.round(card.value * (1 - card.discount / 100)))}</b><del>{formatINR(card.value)}</del></div><button className="button primary product-buy" onClick={() => { addToCart(card); setAdded(true) }}><ShoppingBag size={15} />{added ? 'Added to bag' : 'Add to bag'}</button></div>
+    <div className="gift-info"><div className="product-meta"><span>{card.category}</span>{card.rating !== null && card.rating !== undefined && <span aria-label={`${card.rating} out of 5 stars`}>★ {card.rating}</span>}</div><Link to={`/gift-cards/${card.id}`}><h3>{card.name}</h3></Link><div className="product-price"><b>{formatINR(Math.round(card.value * (1 - card.discount / 100)))}</b><del>{formatINR(card.value)}</del></div><button className="button primary product-buy" onClick={() => { addToCart(card); setAdded(true) }}><ShoppingBag size={15} />{added ? 'Added to bag' : 'Add to bag'}</button></div>
   </article>
 }
 
@@ -107,17 +107,32 @@ function ProductGrid({ cards }) {
 }
 
 function usePrototypeCatalog() {
-  const [catalog, setCatalog] = useState(getPublicCatalog)
+  const [catalog, setCatalog] = useState({ categories: [], giftCards: [], offers: prototypeOffers })
+  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [catalogError, setCatalogError] = useState('')
+
   useEffect(() => {
-    const refresh = () => setCatalog(getPublicCatalog())
-    window.addEventListener('giftly-admin-data-change', refresh)
-    return () => window.removeEventListener('giftly-admin-data-change', refresh)
+    let mounted = true
+    getPublicCatalog()
+      .then((nextCatalog) => {
+        if (mounted) setCatalog(nextCatalog)
+      })
+      .catch((error) => {
+        console.error('Catalog loading error:', error)
+        if (mounted) setCatalogError('The live gift-card catalog is unavailable. Check the Supabase connection and catalog migration.')
+      })
+      .finally(() => {
+        if (mounted) setCatalogLoading(false)
+      })
+
+    return () => { mounted = false }
   }, [])
-  return catalog
+
+  return { ...catalog, catalogLoading, catalogError }
 }
 
 function StoreHome() {
-  const { categories, giftCards, offers } = usePrototypeCatalog()
+  const { categories, giftCards, offers, catalogError } = usePrototypeCatalog()
   return <main className="storefront-home">
     <section className="hero hero-premium">
       <div className="hero-copy">
@@ -130,7 +145,8 @@ function StoreHome() {
       </div>
       <div className="hero-art"><div className="sun" /><img className="restored-hero-image" src={heroImage} alt="Gift cards arranged for gifting" /><div className="hero-card card-one"><span>Giftly</span><b>For someone<br />wonderful.</b><small>GIVE MORE · GIFT SMARTER</small></div><div className="hero-card card-two"><span>Giftly Exchange</span><b>₹2,000</b><small>SHOPPING · DIGITAL GIFT CARD</small></div><div className="hero-art-note"><Globe2 size={15} /><span>Thoughtful picks<br /><b>across categories</b></span></div></div>
     </section>
-    <section className="trust-stats" aria-label="Giftly marketplace at a glance"><div><b>{giftCards.length}</b><span>sample gift cards</span></div><div><b>{categories.length}</b><span>categories to explore</span></div><div><b>{offers.length}</b><span>prototype offers</span></div><div><span className="trust-stat-label"><ShieldCheck size={16} /> Prototype marketplace</span><small>Transparent about what is simulated</small></div></section>
+      {catalogError && <p className="catalog-load-message" role="status">{catalogError}</p>}
+      <section className="trust-stats" aria-label="Giftly marketplace at a glance"><div><b>{giftCards.length}</b><span>gift cards</span></div><div><b>{categories.length}</b><span>categories to explore</span></div><div><b>{offers.length}</b><span>prototype offers</span></div><div><span className="trust-stat-label"><ShieldCheck size={16} /> Prototype marketplace</span><small>Transparent about what is simulated</small></div></section>
     <section className="section category-section"><div className="section-heading"><div><p className="eyebrow">Find your kind of happy</p><h2>Browse by category</h2></div><Link className="text-link" to="/gift-cards">All gift cards <ArrowRight size={15} /></Link></div><div className="category-grid">{categories.slice(0, 6).map((category) => <Link className="category-card" to={`/categories/${encodeURIComponent(category.name)}`} key={category.name} style={{ '--category-bg': category.color, '--category-accent': category.accent }}><span className="category-icon"><Gift size={19} /></span><span><b>{category.name}</b><small>{category.count} gift ideas</small></span><ChevronRight size={15} /></Link>)}</div></section>
     <section className="section tinted popular-section"><div className="section-heading"><div><p className="eyebrow">Popular gift cards</p><h2>Good picks, ready to explore</h2></div><Link className="text-link" to="/gift-cards">Browse the catalog <ArrowRight size={15} /></Link></div><ProductGrid cards={giftCards.slice(0, 4)} /></section>
     <section className="section offers-section"><div className="section-heading"><div><p className="eyebrow">Today's offers</p><h2>A little extra joy</h2></div><Link className="text-link" to="/offers">See all offers <ArrowRight size={15} /></Link></div><div className="offer-grid">{offers.map((offer) => <article className={`offer-card ${offer.color}`} key={offer.id}><span><Sparkles size={19} /></span><p className="eyebrow">Giftly offer</p><h3>{offer.title}</h3><p>{offer.detail}</p><b>{offer.code}</b></article>)}</div><p className="section-caption">Offers are sample product content and are not redeemable in checkout.</p></section>
@@ -143,7 +159,7 @@ function StoreHome() {
 }
 
 function CatalogPage() {
-  const { categories, giftCards } = usePrototypeCatalog()
+  const { categories, giftCards, catalogLoading, catalogError } = usePrototypeCatalog()
   const { category } = useParams()
   const [searchParams] = useSearchParams()
   const normalized = decodeURIComponent(category || '').toLowerCase()
@@ -157,11 +173,12 @@ function CatalogPage() {
   })
   const title = category || (query ? `Results for “${query}”` : 'Gift Cards')
   const clearFilters = () => { setQuery(''); setBrand(''); setMaximumValue(''); setMinimumDiscount('') }
-  return <main className="page catalog-page"><header className="page-header catalog-heading"><div><p className="eyebrow">Giftly Exchange · Sample catalog</p><h1>{title}</h1><p>Compare sample card values and discounts. Checkout is not connected.</p></div><span className="catalog-assurance"><ShieldCheck size={16} /> Prototype pricing</span></header>
+  return <main className="page catalog-page"><header className="page-header catalog-heading"><div><p className="eyebrow">Giftly Exchange · Catalog</p><h1>{title}</h1><p>Browse published gift cards. Checkout and fulfillment are not connected.</p></div><span className="catalog-assurance"><ShieldCheck size={16} /> Catalog pricing</span></header>
+        {catalogLoading && <p className="catalog-load-message" role="status">Loading the gift-card catalog...</p>}{catalogError && <p className="catalog-load-message" role="alert">{catalogError}</p>}
     <div className="catalog-search search-bar"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search brands, categories, or gift cards" aria-label="Search gift cards" />{query && <button type="button" className="catalog-clear-search" onClick={() => setQuery('')} aria-label="Clear search"><X size={16} /></button>}</div>
     <div className="catalog-categories" aria-label="Filter by category"><Link className={!category ? 'active' : ''} to="/gift-cards">All categories</Link>{categories.map((item) => <Link className={category === item.name ? 'active' : ''} to={`/categories/${encodeURIComponent(item.name)}`} key={item.name}>{item.name}</Link>)}</div>
-    <div className="catalog-filter-row"><label>Brand<select value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">All brands</option>{[...new Set(giftCards.map((card) => card.brand))].sort().map((item) => <option key={item}>{item}</option>)}</select></label><label>Maximum face value<select value={maximumValue} onChange={(event) => setMaximumValue(event.target.value)}><option value="">Any value</option><option value="1000">Up to {formatINR(1000)}</option><option value="2500">Up to {formatINR(2500)}</option><option value="5000">Up to {formatINR(5000)}</option></select></label><label>Discount<select value={minimumDiscount} onChange={(event) => setMinimumDiscount(event.target.value)}><option value="">Any discount</option><option value="5">5% or more</option><option value="10">10% or more</option><option value="15">15% or more</option></select></label><span className="catalog-result-count"><b>{cards.length}</b> sample cards</span>{(brand || maximumValue || minimumDiscount || query) && <button className="catalog-reset" onClick={clearFilters}>Clear filters</button>}</div>
-    {cards.length ? <ProductGrid cards={cards} /> : <div className="empty-state catalog-empty"><Search size={23} /><h2>No matching gift cards</h2><p>Try changing your search or filters.</p><button className="button outline" onClick={clearFilters}>Clear filters</button></div>}
+    <div className="catalog-filter-row"><label>Brand<select value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">All brands</option>{[...new Set(giftCards.map((card) => card.brand))].sort().map((item) => <option key={item}>{item}</option>)}</select></label><label>Maximum face value<select value={maximumValue} onChange={(event) => setMaximumValue(event.target.value)}><option value="">Any value</option><option value="1000">Up to {formatINR(1000)}</option><option value="2500">Up to {formatINR(2500)}</option><option value="5000">Up to {formatINR(5000)}</option></select></label><label>Discount<select value={minimumDiscount} onChange={(event) => setMinimumDiscount(event.target.value)}><option value="">Any discount</option><option value="5">5% or more</option><option value="10">10% or more</option><option value="15">15% or more</option></select></label><span className="catalog-result-count"><b>{cards.length}</b> cards</span>{(brand || maximumValue || minimumDiscount || query) && <button className="catalog-reset" onClick={clearFilters}>Clear filters</button>}</div>
+    {cards.length ? <ProductGrid cards={cards} /> : !catalogLoading && <div className="empty-state catalog-empty"><Search size={23} /><h2>{catalogError ? 'Catalog is unavailable' : giftCards.length ? 'No matching gift cards' : 'No gift cards published yet'}</h2><p>{catalogError ? 'Try again after the Supabase catalog is reachable.' : 'Try changing your search or filters.'}</p>{giftCards.length > 0 && <button className="button outline" onClick={clearFilters}>Clear filters</button>}</div>}
   </main>
 }
 
@@ -171,7 +188,7 @@ function OffersPage() {
 }
 
 function GiftCardDetailPage() {
-  const { giftCards } = usePrototypeCatalog()
+  const { giftCards, catalogLoading, catalogError } = usePrototypeCatalog()
   const { id } = useParams()
   const navigate = useNavigate()
   const card = giftCards.find((item) => item.id === id)
@@ -179,7 +196,10 @@ function GiftCardDetailPage() {
   const { toggleWishlist, wishlist } = useWishlist()
   const [quantity, setQuantity] = useState(1)
   const [notice, setNotice] = useState('')
-  if (!card) return <main className="page"><h1>Gift card not found</h1><Link to="/gift-cards">Browse gift cards</Link></main>
+    if (!card) return <main className="page"><h1>{catalogLoading ? 'Loading gift card...' : catalogError ? 'Catalog unavailable' : 'Gift card not found'}</h1>{catalogError && <p className="catalog-load-message" role="alert">{catalogError}</p>}<Link to="/gift-cards">Browse gift cards</Link></main>
+  /*
+    return <main className="page product-page"><Link className="back-link" to="/gift-cards">← Back to gift cards</Link><div className="product-detail"><div className="product-preview product-preview-premium" style={{ background: card.color, color: card.accent }}><div className="product-preview-top"><span className="gift-logo" style={{ background: card.accent }}>{card.logo}</span><span>GIFTLY EXCHANGE</span></div><div><small>DIGITAL GIFT CARD</small><b>{card.brand}</b><strong>{formatINR(card.value)}</strong></div><span className="product-preview-circles" /></div><section className="product-copy"><p className="eyebrow">{card.category} · Giftly catalog</p><h1>{card.name}</h1><div className="product-brand-rating"><b>{card.brand}</b>{card.rating == null ? <span>New to catalog</span> : <span>★ {card.rating} <small>rating</small></span>}</div><p>{card.description || 'Give someone the freedom to choose. Catalog information is provided by Giftly.'} Purchases, seller inventory, and fulfillment are not connected in this phase.</p><div className="product-value-box"><div><span>Sample selling price</span><b>{formatINR(price)}</b></div><div><span>Face value</span><del>{formatINR(card.value)}</del></div><span className="product-discount">Save {card.discount}%</span></div><div className="product-availability"><CircleCheck size={16} /><span><b>Listed in the catalog</b><small>Catalog presence does not imply available seller inventory.</small></span></div><div className="product-buy-row"><label className="quantity-control">Quantity<select value={quantity} onChange={(event) => setQuantity(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((count) => <option key={count}>{count}</option>)}</select></label><button className="button outline product-save" onClick={() => toggleWishlist(card)} aria-label={saved ? 'Remove from wishlist' : 'Add to wishlist'}><Heart size={17} fill={saved ? 'currentColor' : 'none'} />{saved ? 'Saved' : 'Wishlist'}</button></div><div className="product-actions"><button className="button outline" onClick={addSelected}><ShoppingBag size={16} /> Add to bag</button><button className="button primary" [truncated]
+  */
   const saved = wishlist.some((item) => item.id === card.id)
   const price = Math.round(card.value * (1 - card.discount / 100))
   const addSelected = () => { addToCart(card, quantity); setNotice(`${quantity} ${card.name} added to your bag.`) }
@@ -279,20 +299,52 @@ function WishlistPage() {
   const { wishlist } = useWishlist()
   return <main className="page"><header className="page-header"><p className="eyebrow">Saved for later</p><h1>Your wishlist</h1></header>{wishlist.length ? <ProductGrid cards={wishlist} /> : <div className="empty-state"><Heart size={25} /><h2>No saved gift cards yet</h2><p>Save an item from its detail page and it will appear here.</p><Link className="button outline" to="/gift-cards">Browse gift cards</Link></div>}</main>
 }
-
-function LoginPage() {
-  const { user, login } = useAuth()
+function LoginPage({ mode = 'login' }) {
+  const { user, login, register, authReady } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
   const [email, setEmail] = useState('')
-  if (user) return <Navigate to={user.role === 'admin' ? '/admin' : '/dashboard'} replace />
-  const submit = (event) => {
-    event.preventDefault()
-    if (!email.trim()) return
-    login(email.trim(), email.toLowerCase().includes('admin') ? 'Giftly Admin' : 'Giftly Member')
-    navigate(location.state?.from?.pathname || '/dashboard', { replace: true })
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  const isRegister = mode === 'register'
+
+  if (!authReady) {
+    return <main className="auth-page"><section className="auth-art"><Brand /><div><p className="eyebrow">Welcome to Giftly</p><h1>Give More.<br /><em>Save More.</em></h1><p>Explore the marketplace and prototype exchange tools.</p></div><small>Loading your secure session…</small></section><section className="auth-form"><p className="eyebrow">Secure access</p><h2>Loading…</h2><p className="muted">Checking your authenticated session.</p></section></main>
   }
-  return <main className="auth-page"><section className="auth-art"><Brand /><div><p className="eyebrow">Welcome to Giftly</p><h1>Give More.<br /><em>Save More.</em></h1><p>Explore the marketplace and prototype exchange tools.</p></div><small>Prototype sign-in · no password or external identity provider</small></section><section className="auth-form"><p className="eyebrow">Local demo access</p><h2>Sign in</h2><p className="muted">Enter an email to create a local prototype session. Emails containing “admin” use the admin demo role.</p><form onSubmit={submit}><label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label><button className="button primary" type="submit">Continue <ArrowRight size={16} /></button></form><p className="mock-note"><ShieldCheck size={15} /> This is not production authentication. Do not use a real password.</p></section></main>
+
+  if (user) return <Navigate to={user.role === 'admin' ? '/admin' : '/dashboard'} replace />
+
+  const submit = async (event) => {
+    event.preventDefault()
+
+    if (!email.trim()) {
+      setError('Please enter your email address.')
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      setMessage('')
+
+      if (isRegister) {
+        await register(email, name)
+        setMessage('Check your email for the secure sign-in link to complete registration.')
+      } else {
+        await login(email)
+        setMessage('Check your email for the secure sign-in link.')
+      }
+    } catch (caughtError) {
+      console.error('Authentication error:', caughtError)
+      setError(caughtError?.message || 'Unable to continue with authentication right now.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return <main className="auth-page"><section className="auth-art"><Brand /><div><p className="eyebrow">Welcome to Giftly</p><h1>Give More.<br /><em>Save More.</em></h1><p>Explore the marketplace and prototype exchange tools.</p></div><small>Secure email sign-in · no password required</small></section><section className="auth-form"><p className="eyebrow">{isRegister ? 'Create your account' : 'Welcome back'}</p><h2>{isRegister ? 'Register' : 'Sign in'}</h2><p className="muted">Use a valid email to receive a secure magic link. Your account role is determined by your Supabase profile metadata.</p><div className="auth-mode-toggle" style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}><button type="button" className={`button ${!isRegister ? 'primary' : 'outline'}`} onClick={() => navigate('/login')} style={{ flex: 1 }}>Login</button><button type="button" className={`button ${isRegister ? 'primary' : 'outline'}`} onClick={() => navigate('/register')} style={{ flex: 1 }}>Register</button></div><form onSubmit={submit}>{isRegister && <label>Full name<input type="text" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your full name" /></label>}<label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>{error && <p className="error-message" style={{ color: '#d92d20', marginTop: '10px' }}>{error}</p>}{message && <p className="success-message" style={{ color: '#07683d', marginTop: '10px' }}>{message}</p>}<button className="button primary" type="submit" disabled={loading}>{loading ? 'Sending…' : isRegister ? 'Create account' : 'Continue'} <ArrowRight size={16} /></button></form><p className="mock-note"><ShieldCheck size={15} /> This is secure email OTP sign-in with Supabase. No password is stored locally.</p></section></main>
 }
 
 function DashboardPage() {
@@ -380,8 +432,8 @@ function ApplicationRoutes() {
       <Route path="marketplace/:listingId" element={<ListingDetailPage />} />
       <Route path="auctions" element={<AuctionMarketplacePage />} />
       <Route path="auctions/:auctionId" element={<AuctionDetailPage />} />
-      <Route path="login" element={<LoginPage />} />
-      <Route path="register" element={<LoginPage />} />
+      <Route path="login" element={<LoginPage mode="login" />} />
+      <Route path="register" element={<LoginPage mode="register" />} />
       <Route path="support" element={<SupportPage />} />
       <Route path="terms" element={<LegalPage page="terms" />} />
       <Route path="privacy" element={<LegalPage page="privacy" />} />

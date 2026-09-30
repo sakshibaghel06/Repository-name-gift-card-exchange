@@ -5,6 +5,7 @@ import { useAuth } from './contexts'
 import { COUNTRIES } from './services/countryData'
 import { createNotification } from './services/notificationService'
 import { calculateVerificationRisk, checkGiftCardBalance, maskedNumber, scanGiftCardImage, verifyGiftCardDetails } from './services/giftCardVerification'
+import { getMyGiftCardVerifications, submitGiftCardVerification } from './services/giftCardVerificationService'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Check, CheckCircle2, ChevronRight,
   CircleAlert, Clock3, FileImage, FileText, Info, LockKeyhole, RefreshCw,
@@ -127,47 +128,65 @@ export function GiftCardVerificationPage() {
     setStepError('')
     setLoading(true)
     setBalanceLines([])
-    for (const line of sequence) {
-      await pause(480)
-      setBalanceLines((current) => [...current, line])
+    try {
+      for (const line of sequence) {
+        await pause(480)
+        setBalanceLines((current) => [...current, line])
+      }
+      const detailResult = await verifyGiftCardDetails(details)
+      const balanceResult = await checkGiftCardBalance(details)
+      const failedAttempts = Number(sessionStorage.getItem('giftly-card-failed-attempts') || 0) + (detailResult.status === 'SUCCESSFUL' ? 0 : 1)
+      sessionStorage.setItem('giftly-card-failed-attempts', String(failedAttempts))
+      const risk = await calculateVerificationRisk({ maskedCardNumber: maskedNumber(details.cardNumber), failedAttempts, incomplete: false, manualReview: detailResult.status === 'REQUIRES REVIEW' }, giftCardVerifications)
+      const status = detailResult.status === 'SUCCESSFUL' && balanceResult.status === 'VERIFIED' ? 'SUCCESSFUL' : detailResult.status === 'FAILED' || balanceResult.status === 'FAILED' ? 'FAILED' : detailResult.status === 'PARTIALLY VERIFIED' ? 'PARTIALLY VERIFIED' : 'REQUIRES REVIEW'
+      const id = `gcv-${Date.now()}`
+      const reference = referenceId()
+      const record = {
+        id,
+        referenceId: reference,
+        brand: details.brand,
+        country: details.country,
+        currency: details.currency,
+        cardType: details.cardType,
+        maskedCardNumber: maskedNumber(details.cardNumber),
+        verificationStatus: status,
+        balanceStatus: balanceResult.status,
+        mockBalance: balanceResult.balance,
+        cardStatus: balanceResult.cardStatus,
+        reason: detailResult.reason || balanceResult.reason || '',
+        submittedAt: new Date().toISOString(),
+        verifiedAt: status === 'SUCCESSFUL' ? new Date().toISOString() : null,
+        riskStatus: risk.level,
+        riskFlags: risk.flags,
+        detailsVerified: detailResult.status === 'SUCCESSFUL',
+        userId: user?.email,
+        userName: user?.name,
+      }
+
+      await submitGiftCardVerification({
+        userId: user?.id,
+        referenceId: reference,
+        brand: details.brand,
+        country: details.country,
+        currency: details.currency,
+        cardType: details.cardType,
+        maskedCardNumber: record.maskedCardNumber,
+      })
+
+      currentSessionUploads.set(id, { front, back, receipt })
+      saveGiftCardVerification(record)
+      if (user?.email) {
+        createNotification({ userId: user.email, type: 'GIFT_CARD', title: `${record.brand} verification result`, message: `Prototype verification result: ${record.verificationStatus}. Reference ${record.referenceId}.`, relatedId: record.id, relatedType: 'GIFT_CARD', href: '/gift-card-verifications', dedupeKey: `gift-card-result:${record.id}` })
+        if (['HIGH RISK', 'MEDIUM RISK'].includes(risk.level)) createNotification({ userId: user.email, type: 'FRAUD', title: 'Prototype risk review flag', message: `The rules-based demo indicator marked ${record.brand} for review. This is not a real fraud decision.`, relatedId: record.id, relatedType: 'GIFT_CARD', href: '/gift-card-verifications', dedupeKey: `risk-flag:${record.id}` })
+      }
+      setResult(record)
+      setStep(5)
+    } catch (error) {
+      console.error('Gift card verification submission error:', error)
+      setStepError('We could not save your verification submission. Please try again.')
+    } finally {
+      setLoading(false)
     }
-    const detailResult = await verifyGiftCardDetails(details)
-    const balanceResult = await checkGiftCardBalance(details)
-    const failedAttempts = Number(sessionStorage.getItem('giftly-card-failed-attempts') || 0) + (detailResult.status === 'SUCCESSFUL' ? 0 : 1)
-    sessionStorage.setItem('giftly-card-failed-attempts', String(failedAttempts))
-    const risk = await calculateVerificationRisk({ maskedCardNumber: maskedNumber(details.cardNumber), failedAttempts, incomplete: false, manualReview: detailResult.status === 'REQUIRES REVIEW' }, giftCardVerifications)
-    const status = detailResult.status === 'SUCCESSFUL' && balanceResult.status === 'VERIFIED' ? 'SUCCESSFUL' : detailResult.status === 'FAILED' || balanceResult.status === 'FAILED' ? 'FAILED' : detailResult.status === 'PARTIALLY VERIFIED' ? 'PARTIALLY VERIFIED' : 'REQUIRES REVIEW'
-    const id = `gcv-${Date.now()}`
-    const record = {
-      id,
-      referenceId: referenceId(),
-      brand: details.brand,
-      country: details.country,
-      currency: details.currency,
-      cardType: details.cardType,
-      maskedCardNumber: maskedNumber(details.cardNumber),
-      verificationStatus: status,
-      balanceStatus: balanceResult.status,
-      mockBalance: balanceResult.balance,
-      cardStatus: balanceResult.cardStatus,
-      reason: detailResult.reason || balanceResult.reason || '',
-      submittedAt: new Date().toISOString(),
-      verifiedAt: status === 'SUCCESSFUL' ? new Date().toISOString() : null,
-      riskStatus: risk.level,
-      riskFlags: risk.flags,
-      detailsVerified: detailResult.status === 'SUCCESSFUL',
-      userId: user?.email,
-      userName: user?.name,
-    }
-    currentSessionUploads.set(id, { front, back, receipt })
-    saveGiftCardVerification(record)
-    if (user?.email) {
-      createNotification({ userId: user.email, type: 'GIFT_CARD', title: `${record.brand} verification result`, message: `Prototype verification result: ${record.verificationStatus}. Reference ${record.referenceId}.`, relatedId: record.id, relatedType: 'GIFT_CARD', href: '/gift-card-verifications', dedupeKey: `gift-card-result:${record.id}` })
-      if (['HIGH RISK', 'MEDIUM RISK'].includes(risk.level)) createNotification({ userId: user.email, type: 'FRAUD', title: 'Prototype risk review flag', message: `The rules-based demo indicator marked ${record.brand} for review. This is not a real fraud decision.`, relatedId: record.id, relatedType: 'GIFT_CARD', href: '/gift-card-verifications', dedupeKey: `risk-flag:${record.id}` })
-    }
-    setResult(record)
-    setLoading(false)
-    setStep(5)
   }
   const startOver = () => {
     setDetails(emptyDetails)
@@ -210,9 +229,35 @@ function GiftCardRecordModal({ record, onClose, admin = false, onAction }) {
 }
 
 export function GiftCardVerificationHistoryPage() {
-  const { giftCardVerifications } = useAuth()
+  const { user } = useAuth()
+  const [records, setRecords] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [reloadCount, setReloadCount] = useState(0)
   const [selected, setSelected] = useState(null)
-  return <main className="page gc-page gc-history-page"><header className="gc-list-heading"><div><p className="eyebrow">Your account</p><h1>Gift Card Verification History</h1><p>Safe details for the gift cards you have checked.</p></div><Link className="button primary" to="/gift-card-verification"><ScanLine size={16} /> Verify a card</Link></header>{giftCardVerifications.length ? <section className="gc-record-table-wrap"><div className="gc-record-table-scroll"><table className="gc-record-table"><thead><tr><th>Reference ID</th><th>Brand</th><th>Card number</th><th>Country</th><th>Balance status</th><th>Verification</th><th>Date</th><th /></tr></thead><tbody>{giftCardVerifications.map((record) => <tr key={record.id}><td>{record.referenceId}</td><td>{record.brand}</td><td>{record.maskedCardNumber}</td><td>{record.country}</td><td>{record.balanceStatus}</td><td><StatusPill status={record.verificationStatus} /></td><td>{new Date(record.submittedAt).toLocaleDateString()}</td><td><button type="button" className="gc-view-button" onClick={() => setSelected(record)}>View details <ChevronRight size={14} /></button></td></tr>)}</tbody></table></div></section> : <div className="gc-empty-state"><span><FileText size={24} /></span><h2>No verification history yet</h2><p>Verified cards and their masked details will appear here.</p><Link className="button primary" to="/gift-card-verification"><ScanLine size={16} /> Verify a gift card</Link></div>}{selected && <GiftCardRecordModal record={selected} onClose={() => setSelected(null)} />}</main>
+  useEffect(() => {
+    let active = true
+
+    getMyGiftCardVerifications(user?.id)
+      .then((history) => {
+        if (active) setRecords(history)
+      })
+      .catch((issue) => {
+        console.error('Gift card verification history error:', issue)
+        if (active) setError('We could not load your verification history. Please try again.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => { active = false }
+  }, [user?.id, reloadCount])
+
+  return <main className="page gc-page gc-history-page">
+    <header className="gc-list-heading"><div><p className="eyebrow">Your account</p><h1>Gift Card Verification History</h1><p>Safe details for the gift cards you have checked.</p></div><Link className="button primary" to="/gift-card-verification"><ScanLine size={16} /> Verify a card</Link></header>
+    {loading ? <div className="gc-empty-state" role="status"><span><FileText size={24} /></span><h2>Loading verification history</h2><p>Your saved verification submissions are being loaded.</p></div> : error ? <div className="gc-empty-state" role="alert"><span><FileText size={24} /></span><h2>History unavailable</h2><p>{error}</p><button type="button" className="button outline" onClick={() => { setLoading(true); setError(''); setReloadCount((count) => count + 1) }}>Try again</button></div> : records.length ? <section className="gc-record-table-wrap"><div className="gc-record-table-scroll"><table className="gc-record-table"><thead><tr><th>Reference ID</th><th>Brand</th><th>Card number</th><th>Country</th><th>Balance status</th><th>Verification</th><th>Date</th><th /></tr></thead><tbody>{records.map((record) => <tr key={record.id}><td>{record.referenceId}</td><td>{record.brand}</td><td>{record.maskedCardNumber}</td><td>{record.country}</td><td>{record.balanceStatus}</td><td><StatusPill status={record.verificationStatus} /></td><td>{new Date(record.submittedAt).toLocaleDateString()}</td><td><button type="button" className="gc-view-button" onClick={() => setSelected(record)}>View details <ChevronRight size={14} /></button></td></tr>)}</tbody></table></div></section> : <div className="gc-empty-state"><span><FileText size={24} /></span><h2>No verification history yet</h2><p>Submissions and their masked details will appear here.</p><Link className="button primary" to="/gift-card-verification"><ScanLine size={16} /> Verify a gift card</Link></div>}
+    {selected && <GiftCardRecordModal record={selected} onClose={() => setSelected(null)} />}
+  </main>
 }
 
 export function AdminGiftCardVerificationsPage() {

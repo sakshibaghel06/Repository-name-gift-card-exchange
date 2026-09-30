@@ -180,6 +180,7 @@ body { color:var(--ink); background:#fff; }
 .catalog-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:15px; }
 .catalog-heading h1 { margin:10px 0; color:#2e2258; font-size:42px; }
 .catalog-heading > div > p:last-child { margin:0; color:var(--muted); font-size:12px; }
+.catalog-load-message { margin:12px 0; padding:11px 13px; border-left:3px solid #bd8437; background:#fff8ed; color:#71552d; font-size:12px; line-height:1.5; }
 .catalog-assurance { display:inline-flex; align-items:center; gap:7px; padding:8px 10px; border:1px solid #e8e1f0; border-radius:7px; background:#fbf9fd; color:#644bb5; font-size:9px; font-weight:700; white-space:nowrap; }
 .catalog-search { max-width:none; height:48px; margin:0 0 14px; box-shadow:none; }
 .catalog-search input { min-width:0; }

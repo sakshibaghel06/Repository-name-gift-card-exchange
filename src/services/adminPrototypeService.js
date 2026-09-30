@@ -35,17 +35,6 @@ export function getAdminCollection(section, actor) {
   return read(collection[0], collection[1])
 }
 
-export function getPublicCatalog() {
-  const giftCardRecords = read(COLLECTIONS['gift-cards'][0], COLLECTIONS['gift-cards'][1])
-  const categoryRecords = read(COLLECTIONS.categories[0], COLLECTIONS.categories[1])
-  const offerRecords = read(COLLECTIONS.offers[0], COLLECTIONS.offers[1])
-  return {
-    giftCards: giftCardRecords.filter((item) => item.active !== false),
-    categories: categoryRecords.filter((item) => item.active !== false),
-    offers: offerRecords.filter((item) => item.active !== false),
-  }
-}
-
 export function getAdminUsers(actor) {
   requireAdmin(actor)
   const verificationRecords = read('giftly-verification-records', {})

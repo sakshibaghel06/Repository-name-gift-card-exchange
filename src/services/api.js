@@ -1,9 +1,10 @@
-import { giftCards, mockExchanges, mockOrders, offers } from '../data'
+import { mockExchanges, mockOrders, offers } from '../data'
+import { getPublicCatalog } from './catalogService'
 
 const delay = (value) => new Promise((resolve) => setTimeout(() => resolve(value), 120))
 
 export const api = {
-  getGiftCards: () => delay(giftCards),
+  getGiftCards: async () => (await getPublicCatalog()).giftCards,
   getOffers: () => delay(offers),
   getOrders: () => delay(JSON.parse(localStorage.getItem('giftly-orders') || 'null') || mockOrders),
   getExchangeRequests: () => delay(JSON.parse(localStorage.getItem('giftly-exchanges') || 'null') || mockExchanges),
