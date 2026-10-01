@@ -106,15 +106,15 @@ export function MyListingsPage() {
   const [tab, setTab] = useState('All')
   const [error, setError] = useState('')
   useEffect(() => {
-    const refresh = () => getMyListings(user.email).then(setRecords)
+    const refresh = () => getMyListings(user.id, user.email).then(setRecords)
     refresh(); window.addEventListener('giftly-trading-change', refresh)
     return () => window.removeEventListener('giftly-trading-change', refresh)
-  }, [user.email])
+  }, [user.id, user.email])
   const tabs = ['All', 'Active', 'Pending', 'Completed', 'Expired', 'Cancelled']
   const filtered = records.filter((record) => tab === 'All' || listingStatus(record).toLowerCase() === tab.toLowerCase() || tab === 'Pending' && ['PROCESSING', 'AWAITING_SETTLEMENT', 'IN_ESCROW', 'BUYER_REVIEW', 'DISPUTED', 'ADMIN_REVIEW'].includes(listingStatus(record)))
   const cancel = async (record) => {
     setError('')
-    try { if (record.kind === 'P2P Listing') await cancelListing(record.id, user.email); else if (record.kind === 'Auction') await cancelAuction(record.id, user.email); else throw new Error('This cash-out request cannot be cancelled in the prototype.') } catch (issue) { setError(issue.message) }
+    try { if (record.kind === 'P2P Listing') await cancelListing(record.id, user.id); else if (record.kind === 'Auction') await cancelAuction(record.id, user.email); else throw new Error('This cash-out request cannot be cancelled in the prototype.') } catch (issue) { setError(issue.message) }
   }
   return <main className="page trading-page"><Header eyebrow="Your trading activity" title="My Listings" text="Track cash-out requests, marketplace listings, and auctions." action={<Link className="button primary" to="/sell-method"><Plus size={15} /> Start selling</Link>} /><div className="trading-tabs" role="tablist" aria-label="Listing status filters">{tabs.map((item) => <button role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{item}<small>{item === 'All' ? records.length : records.filter((record) => listingStatus(record).toLowerCase() === item.toLowerCase()).length}</small></button>)}</div>{error && <p className="trading-error" role="alert">{error}</p>}{filtered.length ? <div className="trading-table-wrap"><table className="trading-table"><thead><tr><th>Reference ID</th><th>Type</th><th>Brand</th><th>Amount</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody>{filtered.map((record) => <tr key={record.id}><td>{record.transactionId || record.id}</td><td>{record.kind}</td><td>{record.brand}</td><td>{money(record.currency, record.amount)}</td><td><Status value={listingStatus(record)} /></td><td>{dateText(record.createdAt)}</td><td><Link to={record.kind === 'Auction' ? `/auctions/${record.id}` : record.kind === 'P2P Listing' ? `/marketplace/${record.id}` : `/transactions/${record.id}`}>View</Link>{['ACTIVE', 'LIVE'].includes(listingStatus(record)) && (record.kind !== 'Auction' || record.bidCount === 0) && <button onClick={() => cancel(record)}>Cancel</button>}</td></tr>)}</tbody></table></div> : <div className="trading-empty-state compact"><span><PackageCheck size={23} /></span><h2>No {tab === 'All' ? 'trading activity' : `${tab.toLowerCase()} items`}</h2><p>Your selling activity will appear here.</p><Link to="/sell-method">Choose a selling method</Link></div>}</main>
 }
@@ -134,10 +134,10 @@ export function TransactionsPage() {
   const { user } = useAuth()
   const [transactions, setTransactions] = useState([])
   useEffect(() => {
-    const refresh = () => getTransactions(user.email).then(setTransactions)
+    const refresh = () => getTransactions(user.id, user.email).then(setTransactions)
     refresh(); window.addEventListener('giftly-trading-change', refresh)
     return () => window.removeEventListener('giftly-trading-change', refresh)
-  }, [user.email])
+  }, [user.id, user.email])
   return <main className="page trading-page"><Header eyebrow="Your account" title="Transactions" text="A history of simulated trading activity. No real financial activity is shown." />{transactions.length ? <div className="trading-table-wrap"><table className="trading-table"><thead><tr><th>Transaction ID</th><th>Type</th><th>Brand</th><th>Amount</th><th>Currency</th><th>Status</th><th>Date</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{transaction.transactionId}</td><td>{transaction.type}</td><td>{transaction.brand}</td><td>{money(transaction.currency, transaction.amount ?? transaction.estimatedPayout)}</td><td>{transaction.currency}</td><td><Status value={transaction.status} /></td><td>{dateText(transaction.createdAt)}</td><td><Link to={`/transactions/${transaction.id}`}>View</Link></td></tr>)}</tbody></table></div> : <div className="trading-empty-state compact"><span><Banknote size={23} /></span><h2>No transactions yet</h2><p>Prototype payout and purchase records will appear here.</p><Link to="/sell-method">Start selling</Link></div>}</main>
 }
 
@@ -145,9 +145,9 @@ export function TransactionDetailPage() {
   const { id } = useParams()
   const { user } = useAuth()
   const [transaction, setTransaction] = useState(null)
-  useEffect(() => { getTransactionById(id, user.email).then(setTransaction) }, [id, user.email])
+  useEffect(() => { getTransactionById(id, user.id, user.email).then(setTransaction) }, [id, user.id, user.email])
   if (!transaction) return <main className="page trading-page"><Header eyebrow="Transaction" title="Transaction not found" text="This transaction may not belong to your account." /><Link to="/transactions">Back to transactions</Link></main>
-  const rows = [['Transaction ID', transaction.transactionId], ['Type', transaction.type], ['Brand', transaction.brand], ['Currency', transaction.currency], ['Amount', money(transaction.currency, transaction.amount ?? transaction.estimatedPayout)], ['Card balance', money(transaction.currency, transaction.faceValue)], ['Prototype fee', money(transaction.currency, transaction.fee)], ['Payout method', transaction.payoutMethod || '—'], ['Status', transaction.status], ['Created', new Date(transaction.createdAt).toLocaleString()], ['Gift card reference', transaction.giftCardVerificationId]]
+  const rows = [['Transaction ID', transaction.transactionId], ['Order ID', transaction.orderId || '—'], ['Type', transaction.type], ['Brand', transaction.brand], ['Currency', transaction.currency], ['Amount', money(transaction.currency, transaction.amount ?? transaction.estimatedPayout)], ['Card balance', transaction.faceValue == null ? '—' : money(transaction.currency, transaction.faceValue)], ['Fee', transaction.fee == null ? '—' : money(transaction.currency, transaction.fee)], ['Payout method', transaction.payoutMethod || '—'], ['Status', transaction.status], ['Created', new Date(transaction.createdAt).toLocaleString()], ['Gift card reference', transaction.giftCardVerificationId || '—']]
   return <main className="page trading-page"><Link className="back-link" to="/transactions"><ArrowLeft size={15} /> Transactions</Link><Header eyebrow="Safe transaction details" title={transaction.transactionId} text="Only prototype metadata is shown. No card credential or PIN is stored." /><div className="trading-panel transaction-detail-card"><div className="transaction-status-row"><span><Banknote size={21} /></span><b>{transaction.type}</b><Status value={transaction.status} /></div><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><Notice>Prototype transaction. No real payment, bank payout, escrow, or settlement occurred.</Notice></div></main>
 }
 
@@ -168,18 +168,19 @@ export function AdminTradingPage() {
 
 export function TradingActivity() {
   const { user } = useAuth()
-  const userId = user?.email || ''
+  const userId = user?.id || ''
+  const legacyUserId = user?.email || ''
   const [listings, setListings] = useState([])
   const [bids, setBids] = useState([])
   const [transactions, setTransactions] = useState([])
   useEffect(() => {
     const refresh = async () => {
-      const [nextListings, nextBids, nextTransactions] = await Promise.all([getMyListings(userId), getMyBids(userId), getTransactions(userId)])
+      const [nextListings, nextBids, nextTransactions] = await Promise.all([getMyListings(userId, legacyUserId), getMyBids(legacyUserId), getTransactions(userId, legacyUserId)])
       setListings(nextListings); setBids(nextBids); setTransactions(nextTransactions)
     }
     refresh(); window.addEventListener('giftly-trading-change', refresh)
     return () => window.removeEventListener('giftly-trading-change', refresh)
-  }, [userId])
+  }, [userId, legacyUserId])
   const activeListings = listings.filter((item) => item.kind === 'P2P Listing' && item.status === 'ACTIVE').length
   const activeAuctions = listings.filter((item) => item.kind === 'Auction' && item.status === 'LIVE').length
   const pendingTransactions = transactions.filter((item) => ['PENDING', 'PROCESSING', 'AWAITING_SETTLEMENT'].includes(item.status)).length

@@ -25,8 +25,8 @@ function useTradingData() {
   useEffect(() => {
     let active = true
     const refresh = async () => {
-      const [, , adminData] = await Promise.all([getMarketplaceListings(), getActiveAuctions(), getAdminTradingData()])
-      if (active) { setData({ listings: adminData.listings, auctions: adminData.auctions, transactions: adminData.transactions }); setReady(true) }
+      const [listings, , adminData] = await Promise.all([getMarketplaceListings(), getActiveAuctions(), getAdminTradingData()])
+      if (active) { setData({ listings, auctions: adminData.auctions, transactions: adminData.transactions }); setReady(true) }
     }
     refresh()
     window.addEventListener('giftly-trading-change', refresh)
@@ -171,8 +171,8 @@ export function ListingDetailPage() {
     try {
       const transaction = await purchaseListing({ listing, buyer: user })
       setConfirm(false)
-      createNotification({ userId: user.email, type: 'ESCROW', title: 'Prototype escrow created', message: `${listing.brand} purchase ${transaction.transactionId} entered the simulated escrow flow.`, relatedId: transaction.escrowRecordId, relatedType: 'ESCROW', href: `/escrow/${transaction.escrowRecordId}`, dedupeKey: `escrow-created:${transaction.escrowRecordId}` })
-      if (transaction.sellerId) createNotification({ userId: transaction.sellerId, type: 'ESCROW', title: 'A buyer started a prototype transaction', message: `Your ${listing.brand} listing entered the simulated escrow flow.`, relatedId: transaction.escrowRecordId, relatedType: 'ESCROW', href: '/my-escrows', dedupeKey: `escrow-seller:${transaction.escrowRecordId}` })
+      createNotification({ userId: user.email, type: 'ESCROW', title: 'Purchase request created', message: `Order ${transaction.orderId} is pending. Payment has not been processed.`, relatedId: transaction.escrowRecordId, relatedType: 'ESCROW', href: `/escrow/${transaction.escrowRecordId}`, dedupeKey: `escrow-created:${transaction.escrowRecordId}` })
+      if (transaction.sellerId) createNotification({ userId: transaction.sellerId, type: 'ESCROW', title: 'A buyer requested your listing', message: `The order for ${listing.brand} is pending. Payment has not been processed.`, relatedId: transaction.escrowRecordId, relatedType: 'ESCROW', href: '/my-escrows', dedupeKey: `escrow-seller:${transaction.escrowRecordId}` })
       navigate(`/escrow/${transaction.escrowRecordId}`)
     } catch (issue) { setError(issue.message) }
   }

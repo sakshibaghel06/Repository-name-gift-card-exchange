@@ -1,3 +1,4 @@
+import { supabase } from '../lib/supabase'
 import { recordLinkedTransaction, SUPPORTED_CURRENCIES } from './walletService'
 
 const ESCROW_KEY = 'giftly-escrows'
@@ -193,10 +194,55 @@ export async function lockGiftCard(escrowId, actor) {
 export async function getEscrow(escrowId, actor) {
   requireUser(actor)
   const storedEscrow = findEscrow(escrowId)
-  if (!storedEscrow) return delay(null)
-  requireParty(storedEscrow, actor)
-  const escrow = markExpiredIfNeeded(storedEscrow)
-  return delay(escrow)
+  if (storedEscrow) {
+    requireParty(storedEscrow, actor)
+    return delay(markExpiredIfNeeded(storedEscrow))
+  }
+
+  if (!actor.id) return delay(null)
+
+  const { data, error } = await supabase
+    .from('escrow_transactions')
+    .select('id, order_id, buyer_id, seller_id, amount, currency, status, created_at, updated_at')
+    .eq('id', escrowId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return delay(null)
+
+  const { data: transaction, error: transactionError } = await supabase
+    .from('transactions')
+    .select('id, metadata')
+    .eq('order_id', data.order_id)
+    .eq('user_id', actor.id)
+    .maybeSingle()
+  if (transactionError) throw transactionError
+
+  const metadata = transaction?.metadata || {}
+  return delay({
+    id: data.id,
+    escrowId: data.id,
+    orderId: data.order_id,
+    transactionId: transaction?.id || null,
+    buyerId: data.buyer_id === actor.id ? actor.email : data.buyer_id,
+    sellerId: data.seller_id === actor.id ? actor.email : data.seller_id,
+    brand: metadata.brand || 'Marketplace purchase',
+    country: metadata.country || null,
+    currency: data.currency,
+    amount: Number(data.amount),
+    faceValue: metadata.face_value == null ? null : Number(metadata.face_value),
+    maskedCardNumber: metadata.masked_card_number || null,
+    giftCardVerificationId: metadata.gift_card_verification_id || null,
+    status: String(data.status || 'pending').toUpperCase(),
+    paymentStatus: 'NOT_STARTED',
+    cardStatus: 'AVAILABLE',
+    deliveryStatus: 'NOT_STARTED',
+    buyerConfirmation: 'NOT_STARTED',
+    disputeStatus: 'NOT_STARTED',
+    expiresAt: null,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    databaseBacked: true,
+  })
 }
 
 export async function getEscrows(actor, filter = 'All') {

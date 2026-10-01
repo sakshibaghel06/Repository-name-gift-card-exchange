@@ -1,4 +1,4 @@
-import { createEscrow, rollbackEscrowCreation } from './escrowService'
+import { supabase } from '../lib/supabase'
 import { recordLinkedTransaction, SUPPORTED_CURRENCIES } from './walletService'
 
 const STORAGE_KEYS = {
@@ -19,6 +19,19 @@ const write = (key, records) => {
 }
 const makeId = (prefix) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`
 const transactionReference = () => `GX-TX-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`
+const PURCHASE_TRANSACTION_SELECT = `
+  id, user_id, order_id, type, amount, currency, status, metadata, created_at,
+  order:orders!transactions_order_id_fkey(id, listing_id, status)
+`
+const MY_P2P_LISTINGS_SELECT = `
+  id, seller_id, inventory_id, listing_type, asking_price, currency, status, created_at, updated_at,
+  seller:profiles!listings_seller_id_fkey(full_name, email),
+  inventory:gift_card_inventory!listings_inventory_id_fkey(
+    id, verification_id, masked_card_number, currency,
+    gift_card:gift_cards!gift_card_inventory_gift_card_id_fkey(id, title, description, image_url, country, currency, denomination, discount_percent),
+    verification:gift_card_verifications!gift_card_inventory_verification_id_fkey(id, brand, country, currency, masked_card_number, verification_status, balance_status, mock_balance)
+  )
+`
 
 export const calculateFee = (faceValue, rate = 0.05) => {
   const fee = Math.round(Number(faceValue || 0) * rate * 100) / 100
@@ -70,36 +83,171 @@ export async function createInstantCashout({ verification, user, payoutMethod })
 
 export async function createP2PListing({ verification, user, askingPrice, minimumPrice, duration, description }) {
   assertVerified(verification)
-    assertCardAvailableForTrading(verification.id)
-  const card = safeTradingCard(verification)
-  const price = Number(askingPrice)
-  if (!Number.isFinite(price) || price <= 0 || price > card.faceValue) throw new Error('Enter a selling price above zero and no higher than the verified balance.')
-  const discountPercent = Math.round((1 - price / card.faceValue) * 10000) / 100
-  const createdAt = new Date()
-  const listing = {
-    id: makeId('lst'), sellerId: user.email, sellerName: user.name,
-    ...card, faceValue: card.faceValue, askingPrice: price,
-    minimumPrice: Math.min(Number(minimumPrice) || price, price), discountPercent,
-    description: String(description || '').trim(), sellerVerified: true,
-    status: 'ACTIVE', durationDays: Number(duration), createdAt: createdAt.toISOString(),
-    expiresAt: new Date(createdAt.getTime() + Number(duration) * 86400000).toISOString(),
+
+  if (!user?.id) {
+    throw new Error('A signed-in user with a valid profile id is required to create a listing.')
   }
-  write(STORAGE_KEYS.listings, [listing, ...read(STORAGE_KEYS.listings)])
-  return delay(listing)
+
+  const faceValue = Number(verification.mockBalance ?? verification.faceValue ?? 0)
+  const price = Number(askingPrice)
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Enter a selling price above zero.')
+  }
+  if (!Number.isFinite(faceValue) || faceValue <= 0) {
+    throw new Error('The verified card has no usable face value.')
+  }
+  if (price > faceValue) {
+    throw new Error('Enter a selling price no higher than the verified card balance.')
+  }
+
+  const duplicateQuery = supabase
+    .from('gift_card_inventory')
+    .select('id, status, verification_id')
+    .eq('verification_id', verification.id)
+    .in('status', ['pending', 'available', 'reserved', 'sold', 'disabled'])
+    .limit(1)
+
+  const { data: duplicateInventory, error: duplicateError } = await duplicateQuery
+  if (duplicateError) throw duplicateError
+  if (duplicateInventory && duplicateInventory.length > 0) {
+    throw new Error('This verified gift card is already listed or committed to another transaction.')
+  }
+
+  let catalogQuery = supabase
+    .from('gift_cards')
+    .select('id, brand_id, title, description, image_url, country, currency, denomination, discount_percent, status')
+
+  if (verification.gift_card_id) {
+    catalogQuery = catalogQuery.eq('id', verification.gift_card_id)
+  } else {
+    if (verification.country) catalogQuery = catalogQuery.eq('country', verification.country)
+    if (verification.currency) catalogQuery = catalogQuery.eq('currency', verification.currency)
+  }
+
+  const { data: catalogCards, error: catalogError } = await catalogQuery.limit(1)
+
+  if (catalogError) throw catalogError
+  const giftCard = catalogCards && catalogCards.length > 0 ? catalogCards[0] : null
+  if (!giftCard) {
+    throw new Error('No matching gift card catalog record was found for this verified card.')
+  }
+
+  const inventoryPayload = {
+    gift_card_id: giftCard.id,
+    seller_id: user.id,
+    status: 'pending',
+    sale_price: price,
+    currency: String(giftCard.currency || verification.currency || 'USD'),
+    masked_card_number: verification.maskedCardNumber || null,
+    verification_id: verification.id,
+  }
+
+  const { data: inventoryRow, error: inventoryInsertError } = await supabase
+    .from('gift_card_inventory')
+    .insert([inventoryPayload])
+    .select('id, gift_card_id, seller_id, status, sale_price, currency, masked_card_number, verification_id')
+    .single()
+
+  if (inventoryInsertError) throw inventoryInsertError
+
+  const listingPayload = {
+    inventory_id: inventoryRow.id,
+    seller_id: user.id,
+    listing_type: 'fixed_price',
+    asking_price: price,
+    currency: String(inventoryRow.currency || giftCard.currency || verification.currency || 'USD'),
+    status: 'active',
+  }
+
+  const { data: listingRow, error: listingInsertError } = await supabase
+    .from('listings')
+    .insert([listingPayload])
+    .select('id, inventory_id, seller_id, listing_type, asking_price, currency, status, created_at, updated_at')
+    .single()
+
+  if (listingInsertError) {
+    await supabase.from('gift_card_inventory').delete().eq('id', inventoryRow.id)
+    throw listingInsertError
+  }
+
+  const discountPercent = Number((((faceValue - price) / faceValue) * 100).toFixed(2))
+  const createdAt = listingRow?.created_at || new Date().toISOString()
+
+  return {
+    id: listingRow.id,
+    inventoryId: inventoryRow.id,
+    sellerId: user.id,
+    sellerName: user.name || user.email || 'Verified Seller',
+    giftCardVerificationId: verification.id,
+    giftCard: {
+      id: giftCard.id,
+      title: giftCard.title,
+      description: giftCard.description,
+      imageUrl: giftCard.image_url,
+      country: giftCard.country,
+      currency: giftCard.currency,
+      denomination: Number(giftCard.denomination),
+      discountPercent: Number(giftCard.discount_percent),
+    },
+    brand: verification.brand || giftCard.title || 'Gift Card',
+    country: verification.country || giftCard.country || 'Unknown',
+    currency: String(listingRow.currency || giftCard.currency || verification.currency || 'USD'),
+    maskedCardNumber: inventoryRow.masked_card_number || verification.maskedCardNumber || '',
+    faceValue,
+    verificationStatus: verification.verificationStatus,
+    balanceStatus: verification.balanceStatus,
+    sellerVerified: true,
+    askingPrice: Number(listingRow.asking_price),
+    minimumPrice: Math.min(Number(minimumPrice) || price, price),
+    discountPercent: Number.isFinite(discountPercent) ? discountPercent : 0,
+    description: String(description || '').trim() || giftCard.description || 'Verified gift card available for sale.',
+    status: 'ACTIVE',
+    listingType: listingRow.listing_type,
+    durationDays: Number(duration) || 7,
+    createdAt,
+    expiresAt: null,
+  }
 }
 
 export async function getMarketplaceListings(filters = {}) {
-  const now = Date.now()
-  const storedListings = read(STORAGE_KEYS.listings)
-  let changed = false
-  let listings = storedListings.map((listing) => {
-    if (listing.status === 'ACTIVE' && new Date(listing.expiresAt).getTime() <= now) {
-      changed = true
-      return { ...listing, status: 'EXPIRED' }
-    }
-    return listing
-  })
-  if (changed) write(STORAGE_KEYS.listings, listings)
+  const { data, error } = await supabase.rpc('get_marketplace_listings')
+  if (error) throw error
+
+  let listings = (data || []).map((row) => ({
+    id: row.id,
+    inventoryId: row.inventory_id,
+    sellerId: row.seller_id,
+    sellerName: row.seller_name || row.sellerName || 'Verified Seller',
+    giftCardVerificationId: row.verification_id || row.gift_card_verification_id || null,
+    giftCard: row.gift_card || (row.gift_card_id || row.title ? {
+      id: row.gift_card_id,
+      title: row.title,
+      imageUrl: row.image_url,
+      country: row.country,
+      currency: row.currency,
+    } : null),
+    listingType: row.listing_type,
+    brand: row.brand,
+    country: row.country,
+    currency: row.currency,
+    maskedCardNumber: row.masked_card_number,
+    faceValue: Number(row.face_value || 0),
+    askingPrice: Number(row.asking_price || 0),
+    discountPercent: Number(row.discount_percent || 0),
+    minimumPrice: row.minimum_price == null ? null : Number(row.minimum_price),
+    durationDays: row.duration_days == null ? null : Number(row.duration_days),
+    imageUrl: row.image_url,
+    title: row.title,
+    description: row.description || '',
+    status: String(row.status || 'active').toUpperCase(),
+    verificationStatus: row.verification_status?.toUpperCase() || null,
+    balanceStatus: row.balance_status?.toUpperCase() || null,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at || null,
+    sellerVerified: true,
+  }))
+
   listings = listings.filter((listing) => listing.status === 'ACTIVE')
   if (filters.brand) listings = listings.filter((listing) => listing.brand === filters.brand)
   if (filters.country) listings = listings.filter((listing) => listing.country === filters.country)
@@ -108,35 +256,52 @@ export async function getMarketplaceListings(filters = {}) {
   if (Number(filters.minPrice)) listings = listings.filter((listing) => listing.askingPrice >= Number(filters.minPrice))
   if (Number(filters.maxPrice)) listings = listings.filter((listing) => listing.askingPrice <= Number(filters.maxPrice))
   if (Number(filters.minDiscount)) listings = listings.filter((listing) => listing.discountPercent >= Number(filters.minDiscount))
+
   if (filters.sort === 'price-low') listings.sort((a, b) => a.askingPrice - b.askingPrice)
   else if (filters.sort === 'price-high') listings.sort((a, b) => b.askingPrice - a.askingPrice)
   else if (filters.sort === 'discount') listings.sort((a, b) => b.discountPercent - a.discountPercent)
   else listings.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+
   return delay(listings)
 }
 
 export async function purchaseListing({ listing, buyer }) {
-  if (!buyer?.email) throw new Error('Sign in before purchasing a listing.')
-  const storedListing = read(STORAGE_KEYS.listings).find((item) => item.id === listing?.id)
-  if (!listing || !storedListing || storedListing.status !== 'ACTIVE') throw new Error('This listing is no longer available.')
-  if (listing.sellerId === buyer.email) throw new Error('You cannot buy your own listing.')
-  const transaction = {
-    id: makeId('txn'), transactionId: transactionReference(), userId: buyer.email,
-    userName: buyer.name, sellerId: storedListing.sellerId, listingId: storedListing.id,
-    giftCardVerificationId: storedListing.giftCardVerificationId, method: 'p2p',
-    type: 'P2P Purchase', brand: storedListing.brand, currency: storedListing.currency,
-    faceValue: storedListing.faceValue, fee: 0, estimatedPayout: storedListing.askingPrice,
-    amount: storedListing.askingPrice, status: 'ESCROW', createdAt: new Date().toISOString(),
+  if (!buyer?.id) throw new Error('Sign in before purchasing a listing.')
+  if (!listing?.id) throw new Error('A marketplace listing is required.')
+
+  const { data, error } = await supabase.rpc('purchase_marketplace_listing', {
+    p_listing_id: listing.id,
+  })
+  if (error) throw error
+
+  const result = Array.isArray(data) ? data[0] : data
+  if (!result) throw new Error('The purchase request did not return an order.')
+
+  return {
+    id: result.transaction_id,
+    transactionId: result.transaction_id,
+    orderId: result.order_id,
+    userId: buyer.id,
+    userName: buyer.name,
+    sellerId: result.seller_id,
+    sellerName: listing.sellerName,
+    listingId: result.listing_id,
+    giftCardVerificationId: listing.giftCardVerificationId || null,
+    method: 'p2p',
+    type: 'P2P Purchase',
+    brand: listing.brand,
+    country: listing.country,
+    currency: result.currency,
+    faceValue: listing.faceValue,
+    maskedCardNumber: listing.maskedCardNumber,
+    amount: Number(result.amount),
+    status: String(result.status || 'pending').toUpperCase(),
+    escrowId: result.escrow_id,
+    escrowRecordId: result.escrow_id,
+    escrowStatus: 'PENDING',
+    paymentStatus: 'NOT_STARTED',
+    createdAt: result.created_at,
   }
-  write(STORAGE_KEYS.transactions, [transaction, ...read(STORAGE_KEYS.transactions)])
-  let escrow
-  try {
-    escrow = await createEscrow({ transaction, listing: storedListing, buyer })
-  } catch (error) {
-    rollbackEscrowCreation(transaction, buyer)
-    throw error
-  }
-  return delay({ ...transaction, status: 'CARD_LOCKED', escrowId: escrow.escrowId, escrowRecordId: escrow.id, escrowStatus: escrow.status, paymentStatus: escrow.paymentStatus })
 }
 
 export async function createAuction({ verification, user, startingBid, minimumBid, duration, description }) {
@@ -200,11 +365,70 @@ export async function placeBid({ auctionId, bidder, amount }) {
   return delay(bid)
 }
 
-export async function getMyListings(userId) {
+export async function getMyListings(userId, legacyUserId = userId) {
+  if (!userId) return delay([])
+
+  const { data: listingRows, error } = await supabase
+    .from('listings')
+    .select(MY_P2P_LISTINGS_SELECT)
+    .eq('seller_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+
+  const p2pListings = (listingRows || []).map((row) => {
+    const inventory = Array.isArray(row.inventory) ? row.inventory[0] : row.inventory
+    const giftCard = Array.isArray(inventory?.gift_card) ? inventory.gift_card[0] : inventory?.gift_card
+    const verification = Array.isArray(inventory?.verification) ? inventory.verification[0] : inventory?.verification
+    const seller = Array.isArray(row.seller) ? row.seller[0] : row.seller
+    const verificationStatus = verification?.verification_status === 'verified'
+      ? 'SUCCESSFUL'
+      : verification?.verification_status?.toUpperCase()
+    const balanceStatus = verification?.balance_status?.toUpperCase()
+    const faceValue = Number(verification?.mock_balance ?? 0)
+    const askingPrice = Number(row.asking_price)
+
+    return {
+      id: row.id,
+      inventoryId: row.inventory_id,
+      sellerId: row.seller_id,
+      sellerName: seller?.full_name || seller?.email || 'Verified Seller',
+      giftCardVerificationId: inventory?.verification_id || null,
+      giftCard: giftCard ? {
+        id: giftCard.id,
+        title: giftCard.title,
+        description: giftCard.description,
+        imageUrl: giftCard.image_url,
+        country: giftCard.country,
+        currency: giftCard.currency,
+        denomination: Number(giftCard.denomination),
+        discountPercent: Number(giftCard.discount_percent),
+      } : null,
+      brand: verification?.brand || giftCard?.title || 'Gift Card',
+      country: verification?.country || giftCard?.country || 'Unknown',
+      currency: row.currency,
+      maskedCardNumber: inventory?.masked_card_number || verification?.masked_card_number || '',
+      faceValue,
+      verificationStatus,
+      balanceStatus,
+      sellerVerified: ['SUCCESSFUL', 'VERIFIED'].includes(verificationStatus) && balanceStatus === 'VERIFIED',
+      askingPrice,
+      amount: askingPrice,
+      minimumPrice: null,
+      discountPercent: faceValue > 0 ? Number((((faceValue - askingPrice) / faceValue) * 100).toFixed(2)) : 0,
+      description: giftCard?.description || 'Verified gift card available for sale.',
+      status: String(row.status || '').toUpperCase(),
+      listingType: row.listing_type,
+      kind: 'P2P Listing',
+      createdAt: row.created_at,
+      expiresAt: null,
+    }
+  })
+
   return delay([
-    ...read(STORAGE_KEYS.transactions).filter((transaction) => transaction.userId === userId && transaction.method === 'instant').map((transaction) => ({ ...transaction, kind: 'Instant Cash-Out', brand: transaction.brand, amount: transaction.estimatedPayout })),
-    ...read(STORAGE_KEYS.listings).filter((listing) => listing.sellerId === userId).map((listing) => ({ ...listing, kind: 'P2P Listing', amount: listing.askingPrice })),
-    ...read(STORAGE_KEYS.auctions).filter((auction) => auction.sellerId === userId).map((auction) => ({ ...auction, kind: 'Auction', amount: auction.currentBid })),
+    ...read(STORAGE_KEYS.transactions).filter((transaction) => transaction.userId === legacyUserId && transaction.method === 'instant').map((transaction) => ({ ...transaction, kind: 'Instant Cash-Out', brand: transaction.brand, amount: transaction.estimatedPayout })),
+    ...p2pListings,
+    ...read(STORAGE_KEYS.auctions).filter((auction) => auction.sellerId === legacyUserId).map((auction) => ({ ...auction, kind: 'Auction', amount: auction.currentBid })),
   ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)))
 }
 
@@ -224,23 +448,145 @@ export async function getMyBids(userId) {
   }).filter(Boolean))
 }
 
-export async function getTransactions(userId) {
-  const transactions = read(STORAGE_KEYS.transactions)
-  return delay(userId ? transactions.filter((transaction) => transaction.userId === userId || transaction.sellerId === userId || transaction.buyerId === userId) : transactions)
+function mapPurchaseTransaction(row, escrowByOrder = new Map()) {
+  const order = Array.isArray(row.order) ? row.order[0] : row.order
+  const metadata = row.metadata || {}
+  const escrow = escrowByOrder.get(row.order_id)
+
+  return {
+    id: row.id,
+    transactionId: row.id,
+    orderId: row.order_id,
+    userId: row.user_id,
+    sellerId: metadata.seller_id || null,
+    listingId: order?.listing_id || metadata.listing_id || null,
+    giftCardVerificationId: metadata.gift_card_verification_id || null,
+    method: 'p2p',
+    type: 'P2P Purchase',
+    brand: metadata.brand || 'Gift Card',
+    country: metadata.country || null,
+    currency: row.currency,
+    faceValue: metadata.face_value == null ? null : Number(metadata.face_value),
+    maskedCardNumber: metadata.masked_card_number || null,
+    amount: Number(row.amount),
+    status: String(row.status || '').toUpperCase(),
+    escrowId: escrow?.id || null,
+    escrowRecordId: escrow?.id || null,
+    escrowStatus: escrow?.status?.toUpperCase() || null,
+    createdAt: row.created_at,
+  }
 }
 
-export async function getTransactionById(id, userId) {
-  const transaction = read(STORAGE_KEYS.transactions).find((item) => item.id === id || item.transactionId === id)
-  return delay(transaction && (!userId || transaction.userId === userId || transaction.sellerId === userId || transaction.buyerId === userId) ? transaction : null)
+async function getPurchaseTransactions(userId, transactionId) {
+  if (!userId) return []
+
+  let query = supabase.from('transactions').select(PURCHASE_TRANSACTION_SELECT).eq('user_id', userId).eq('type', 'purchase')
+  if (transactionId) query = query.eq('id', transactionId)
+  else query = query.order('created_at', { ascending: false })
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const rows = data || []
+  const orderIds = rows.map((row) => row.order_id)
+  if (!orderIds.length) return []
+
+  const { data: escrows, error: escrowError } = await supabase
+    .from('escrow_transactions')
+    .select('id, order_id, status')
+    .in('order_id', orderIds)
+  if (escrowError) throw escrowError
+
+  const escrowByOrder = new Map((escrows || []).map((escrow) => [escrow.order_id, escrow]))
+  return rows.map((row) => mapPurchaseTransaction(row, escrowByOrder))
+}
+
+export async function getTransactions(userId, legacyUserId = userId) {
+  const [purchaseTransactions, legacyTransactions] = await Promise.all([
+    getPurchaseTransactions(userId),
+    Promise.resolve(read(STORAGE_KEYS.transactions).filter((transaction) =>
+      transaction.userId === legacyUserId || transaction.sellerId === legacyUserId || transaction.buyerId === legacyUserId
+    )),
+  ])
+
+  const legacyPurchaseIds = new Set(legacyTransactions.filter((item) => item.method === 'p2p').map((item) => item.listingId))
+  const transactions = [
+    ...purchaseTransactions.filter((item) => !legacyPurchaseIds.has(item.listingId)),
+    ...legacyTransactions,
+  ]
+  return delay(transactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)))
+}
+
+export async function getTransactionById(id, userId, legacyUserId = userId) {
+  const legacyTransaction = read(STORAGE_KEYS.transactions).find((item) => item.id === id || item.transactionId === id)
+  if (legacyTransaction && (!legacyUserId || legacyTransaction.userId === legacyUserId || legacyTransaction.sellerId === legacyUserId || legacyTransaction.buyerId === legacyUserId)) {
+    return delay(legacyTransaction)
+  }
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id)) || !userId) return delay(null)
+  const [transaction] = await getPurchaseTransactions(userId, id)
+  return delay(transaction || null)
 }
 
 export async function cancelListing(id, userId) {
-  const listings = read(STORAGE_KEYS.listings)
-  const target = listings.find((listing) => listing.id === id && (!userId || listing.sellerId === userId))
-  if (!target || target.status !== 'ACTIVE') throw new Error('This listing can no longer be cancelled.')
-  const updated = { ...target, status: 'CANCELLED', cancelledAt: new Date().toISOString() }
-  write(STORAGE_KEYS.listings, listings.map((listing) => listing.id === id ? updated : listing))
-  return delay(updated)
+  if (!userId) throw new Error('A user id is required to cancel a listing.')
+
+  const { data: target, error: findError } = await supabase
+    .from('listings')
+    .select(MY_P2P_LISTINGS_SELECT)
+    .eq('id', id)
+    .eq('seller_id', userId)
+    .single()
+
+  if (findError) {
+    if (findError.code === 'PGRST116') throw new Error('This listing could not be found for this seller.')
+    throw findError
+  }
+
+  if (!target || String(target.status).toLowerCase() !== 'active') {
+    throw new Error('This listing can no longer be cancelled.')
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from('listings')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('seller_id', userId)
+    .eq('status', 'active')
+    .select(MY_P2P_LISTINGS_SELECT)
+    .single()
+
+  if (updateError) {
+    if (updateError.message?.includes('listing status are controlled fields')) {
+      throw new Error('The database currently prevents sellers from changing listing status. Cancellation requires an authorized database-side lifecycle change.')
+    }
+    throw updateError
+  }
+
+  const inventory = Array.isArray(updated.inventory) ? updated.inventory[0] : updated.inventory
+  const giftCard = Array.isArray(inventory?.gift_card) ? inventory.gift_card[0] : inventory?.gift_card
+  const verification = Array.isArray(inventory?.verification) ? inventory.verification[0] : inventory?.verification
+  const seller = Array.isArray(updated.seller) ? updated.seller[0] : updated.seller
+
+  window.dispatchEvent(new CustomEvent('giftly-trading-change'))
+
+  return {
+    id: updated.id,
+    inventoryId: updated.inventory_id,
+    sellerId: updated.seller_id,
+    sellerName: seller?.full_name || seller?.email || 'Verified Seller',
+    giftCardVerificationId: inventory?.verification_id || null,
+    giftCard: giftCard || null,
+    brand: verification?.brand || giftCard?.title || 'Gift Card',
+    country: verification?.country || giftCard?.country || 'Unknown',
+    status: 'CANCELLED',
+    listingType: updated.listing_type,
+    askingPrice: Number(updated.asking_price || 0),
+    currency: updated.currency,
+    createdAt: updated.created_at,
+    cancelledAt: updated.updated_at,
+    expiresAt: null,
+  }
 }
 
 export async function cancelAuction(id, userId) {
