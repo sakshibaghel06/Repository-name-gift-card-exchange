@@ -381,8 +381,9 @@ function LegacySellRoute() {
 }
 
 function RequireCustomer() {
-  const { user } = useAuth()
+  const { user, authReady } = useAuth()
   const location = useLocation()
+  if (!authReady) return <main className="page"><p>Loading your session…</p></main>
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />
   if (user.role === 'admin') return <Navigate to="/admin" replace />
   return <Outlet />

@@ -21,7 +21,7 @@ const makeId = (prefix) => `${prefix}-${Date.now()}-${Math.floor(Math.random() *
 const transactionReference = () => `GX-TX-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`
 const PURCHASE_TRANSACTION_SELECT = `
   id, user_id, order_id, type, amount, currency, status, metadata, created_at,
-  order:orders!transactions_order_id_fkey(id, listing_id, status)
+  order:orders!transactions_order_id_fkey(id, listing_id, status, payment_secured_at)
 `
 const MY_P2P_LISTINGS_SELECT = `
   id, seller_id, inventory_id, listing_type, asking_price, currency, status, created_at, updated_at,
@@ -79,6 +79,62 @@ export async function createInstantCashout({ verification, user, payoutMethod })
   }
   write(STORAGE_KEYS.transactions, [transaction, ...read(STORAGE_KEYS.transactions)])
   return delay(transaction)
+}
+
+export async function createDevelopmentTestListing(user) {
+  if (!import.meta.env.DEV) {
+    throw new Error('Test listings are available only in development builds.')
+  }
+  if (!user?.id) {
+    throw new Error('A signed-in user with a valid profile id is required to create a test listing.')
+  }
+
+  const { data: giftCard, error: catalogError } = await supabase
+    .from('gift_cards')
+    .select('id')
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+
+  if (catalogError) throw catalogError
+  if (!giftCard) throw new Error('No active gift card catalog record is available.')
+
+  const { data: inventory, error: inventoryError } = await supabase
+    .from('gift_card_inventory')
+    .insert({
+      gift_card_id: giftCard.id,
+      seller_id: user.id,
+      status: 'pending',
+      sale_price: 100,
+      currency: 'INR',
+      masked_card_number: 'TEST-****-0100',
+      verification_id: null,
+    })
+    .select('id')
+    .single()
+
+  if (inventoryError) throw inventoryError
+
+  const { data: listing, error: listingError } = await supabase
+    .from('listings')
+    .insert({
+      inventory_id: inventory.id,
+      seller_id: user.id,
+      listing_type: 'fixed_price',
+      asking_price: 100,
+      currency: 'INR',
+      status: 'active',
+    })
+    .select('id')
+    .single()
+
+  if (listingError) {
+    await supabase.from('gift_card_inventory').delete().eq('id', inventory.id)
+    throw listingError
+  }
+
+  window.dispatchEvent(new CustomEvent('giftly-trading-change'))
+  return listing
 }
 
 export async function createP2PListing({ verification, user, askingPrice, minimumPrice, duration, description }) {
@@ -448,10 +504,12 @@ export async function getMyBids(userId) {
   }).filter(Boolean))
 }
 
-function mapPurchaseTransaction(row, escrowByOrder = new Map()) {
+function mapPurchaseTransaction(row, escrowByOrder = new Map(), deliveryByOrder = new Map()) {
   const order = Array.isArray(row.order) ? row.order[0] : row.order
   const metadata = row.metadata || {}
   const escrow = escrowByOrder.get(row.order_id)
+  const delivery = deliveryByOrder.get(row.order_id)
+  const isPayout = row.type === 'payout'
 
   return {
     id: row.id,
@@ -461,8 +519,8 @@ function mapPurchaseTransaction(row, escrowByOrder = new Map()) {
     sellerId: metadata.seller_id || null,
     listingId: order?.listing_id || metadata.listing_id || null,
     giftCardVerificationId: metadata.gift_card_verification_id || null,
-    method: 'p2p',
-    type: 'P2P Purchase',
+    method: isPayout ? 'payout' : 'p2p',
+    type: isPayout ? 'Seller Payout' : 'P2P Purchase',
     brand: metadata.brand || 'Gift Card',
     country: metadata.country || null,
     currency: row.currency,
@@ -473,6 +531,13 @@ function mapPurchaseTransaction(row, escrowByOrder = new Map()) {
     escrowId: escrow?.id || null,
     escrowRecordId: escrow?.id || null,
     escrowStatus: escrow?.status?.toUpperCase() || null,
+    orderStatus: order?.status?.toUpperCase() || null,
+    paymentSecuredAt: order?.payment_secured_at || escrow?.funded_at || null,
+    paymentStatus: escrow?.funded_at ? 'SIMULATED_PAID' : 'NOT_STARTED',
+    deliveryStatus: delivery?.status?.toUpperCase() || (['release_pending', 'released'].includes(escrow?.status) ? 'DELIVERED' : 'PENDING'),
+    deliveredAt: delivery?.delivered_at || null,
+    buyerConfirmation: escrow?.status === 'released' ? 'CONFIRMED' : 'PENDING',
+    databaseBacked: true,
     createdAt: row.created_at,
   }
 }
@@ -480,7 +545,7 @@ function mapPurchaseTransaction(row, escrowByOrder = new Map()) {
 async function getPurchaseTransactions(userId, transactionId) {
   if (!userId) return []
 
-  let query = supabase.from('transactions').select(PURCHASE_TRANSACTION_SELECT).eq('user_id', userId).eq('type', 'purchase')
+  let query = supabase.from('transactions').select(PURCHASE_TRANSACTION_SELECT).eq('user_id', userId).in('type', ['purchase', 'payout'])
   if (transactionId) query = query.eq('id', transactionId)
   else query = query.order('created_at', { ascending: false })
 
@@ -493,12 +558,19 @@ async function getPurchaseTransactions(userId, transactionId) {
 
   const { data: escrows, error: escrowError } = await supabase
     .from('escrow_transactions')
-    .select('id, order_id, status')
+    .select('id, order_id, status, funded_at, released_at')
     .in('order_id', orderIds)
   if (escrowError) throw escrowError
 
   const escrowByOrder = new Map((escrows || []).map((escrow) => [escrow.order_id, escrow]))
-  return rows.map((row) => mapPurchaseTransaction(row, escrowByOrder))
+  const { data: deliveries, error: deliveryError } = await supabase
+    .from('deliveries')
+    .select('order_id, status, delivered_at')
+    .in('order_id', orderIds)
+  if (deliveryError) throw deliveryError
+
+  const deliveryByOrder = new Map((deliveries || []).map((delivery) => [delivery.order_id, delivery]))
+  return rows.map((row) => mapPurchaseTransaction(row, escrowByOrder, deliveryByOrder))
 }
 
 export async function getTransactions(userId, legacyUserId = userId) {

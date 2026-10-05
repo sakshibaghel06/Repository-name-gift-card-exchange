@@ -3,9 +3,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from './contexts'
 import { createNotification } from './services/notificationService'
 import {
+  confirmMarketplaceGiftCardReceived, simulateMarketplacePayment,
+} from './services/escrowService'
+import {
   adminUpdateRecord, cancelAuction, cancelListing, getActiveAuctions,
-  getAdminTradingData, getBidsByAuction, getMarketplaceListings, getMyBids,
-  getMyListings, getTransactionById, getTransactions, placeBid,
+  createDevelopmentTestListing, getAdminTradingData, getBidsByAuction,
+  getMarketplaceListings, getMyBids, getMyListings, getTransactionById,
+  getTransactions, placeBid,
 } from './services/tradingService'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Banknote, CalendarClock, CheckCircle2,
@@ -105,6 +109,7 @@ export function MyListingsPage() {
   const [records, setRecords] = useState([])
   const [tab, setTab] = useState('All')
   const [error, setError] = useState('')
+  const [testListingBusy, setTestListingBusy] = useState(false)
   useEffect(() => {
     const refresh = () => getMyListings(user.id, user.email).then(setRecords)
     refresh(); window.addEventListener('giftly-trading-change', refresh)
@@ -116,7 +121,20 @@ export function MyListingsPage() {
     setError('')
     try { if (record.kind === 'P2P Listing') await cancelListing(record.id, user.id); else if (record.kind === 'Auction') await cancelAuction(record.id, user.email); else throw new Error('This cash-out request cannot be cancelled in the prototype.') } catch (issue) { setError(issue.message) }
   }
-  return <main className="page trading-page"><Header eyebrow="Your trading activity" title="My Listings" text="Track cash-out requests, marketplace listings, and auctions." action={<Link className="button primary" to="/sell-method"><Plus size={15} /> Start selling</Link>} /><div className="trading-tabs" role="tablist" aria-label="Listing status filters">{tabs.map((item) => <button role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{item}<small>{item === 'All' ? records.length : records.filter((record) => listingStatus(record).toLowerCase() === item.toLowerCase()).length}</small></button>)}</div>{error && <p className="trading-error" role="alert">{error}</p>}{filtered.length ? <div className="trading-table-wrap"><table className="trading-table"><thead><tr><th>Reference ID</th><th>Type</th><th>Brand</th><th>Amount</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody>{filtered.map((record) => <tr key={record.id}><td>{record.transactionId || record.id}</td><td>{record.kind}</td><td>{record.brand}</td><td>{money(record.currency, record.amount)}</td><td><Status value={listingStatus(record)} /></td><td>{dateText(record.createdAt)}</td><td><Link to={record.kind === 'Auction' ? `/auctions/${record.id}` : record.kind === 'P2P Listing' ? `/marketplace/${record.id}` : `/transactions/${record.id}`}>View</Link>{['ACTIVE', 'LIVE'].includes(listingStatus(record)) && (record.kind !== 'Auction' || record.bidCount === 0) && <button onClick={() => cancel(record)}>Cancel</button>}</td></tr>)}</tbody></table></div> : <div className="trading-empty-state compact"><span><PackageCheck size={23} /></span><h2>No {tab === 'All' ? 'trading activity' : `${tab.toLowerCase()} items`}</h2><p>Your selling activity will appear here.</p><Link to="/sell-method">Choose a selling method</Link></div>}</main>
+  const createTestListing = async () => {
+    setError('')
+    setTestListingBusy(true)
+    try {
+      await createDevelopmentTestListing(user)
+      setRecords(await getMyListings(user.id, user.email))
+    } catch (issue) {
+      setError(issue.message)
+    } finally {
+      setTestListingBusy(false)
+    }
+  }
+  const headerAction = <><Link className="button primary" to="/sell-method"><Plus size={15} /> Start selling</Link>{import.meta.env.DEV && <button className="button outline" type="button" disabled={testListingBusy} onClick={createTestListing}><Tag size={15} /> {testListingBusy ? 'Creating test listing…' : 'Create Test Listing (DEV ONLY)'}</button>}</>
+  return <main className="page trading-page"><Header eyebrow="Your trading activity" title="My Listings" text="Track cash-out requests, marketplace listings, and auctions." action={headerAction} /><div className="trading-tabs" role="tablist" aria-label="Listing status filters">{tabs.map((item) => <button role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{item}<small>{item === 'All' ? records.length : records.filter((record) => listingStatus(record).toLowerCase() === item.toLowerCase()).length}</small></button>)}</div>{error && <p className="trading-error" role="alert">{error}</p>}{filtered.length ? <div className="trading-table-wrap"><table className="trading-table"><thead><tr><th>Reference ID</th><th>Type</th><th>Brand</th><th>Amount</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody>{filtered.map((record) => <tr key={record.id}><td>{record.transactionId || record.id}</td><td>{record.kind}</td><td>{record.brand}</td><td>{money(record.currency, record.amount)}</td><td><Status value={listingStatus(record)} /></td><td>{dateText(record.createdAt)}</td><td><Link to={record.kind === 'Auction' ? `/auctions/${record.id}` : record.kind === 'P2P Listing' ? `/marketplace/${record.id}` : `/transactions/${record.id}`}>View</Link>{['ACTIVE', 'LIVE'].includes(listingStatus(record)) && (record.kind !== 'Auction' || record.bidCount === 0) && <button onClick={() => cancel(record)}>Cancel</button>}</td></tr>)}</tbody></table></div> : <div className="trading-empty-state compact"><span><PackageCheck size={23} /></span><h2>No {tab === 'All' ? 'trading activity' : `${tab.toLowerCase()} items`}</h2><p>Your selling activity will appear here.</p><Link to="/sell-method">Choose a selling method</Link></div>}</main>
 }
 
 export function MyBidsPage() {
@@ -145,10 +163,34 @@ export function TransactionDetailPage() {
   const { id } = useParams()
   const { user } = useAuth()
   const [transaction, setTransaction] = useState(null)
-  useEffect(() => { getTransactionById(id, user.id, user.email).then(setTransaction) }, [id, user.id, user.email])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  useEffect(() => {
+    let active = true
+    getTransactionById(id, user.id, user.email)
+      .then((record) => { if (active) setTransaction(record) })
+      .catch((issue) => { if (active) setError(issue.message) })
+    return () => { active = false }
+  }, [id, user.id, user.email])
   if (!transaction) return <main className="page trading-page"><Header eyebrow="Transaction" title="Transaction not found" text="This transaction may not belong to your account." /><Link to="/transactions">Back to transactions</Link></main>
-  const rows = [['Transaction ID', transaction.transactionId], ['Order ID', transaction.orderId || '—'], ['Type', transaction.type], ['Brand', transaction.brand], ['Currency', transaction.currency], ['Amount', money(transaction.currency, transaction.amount ?? transaction.estimatedPayout)], ['Card balance', transaction.faceValue == null ? '—' : money(transaction.currency, transaction.faceValue)], ['Fee', transaction.fee == null ? '—' : money(transaction.currency, transaction.fee)], ['Payout method', transaction.payoutMethod || '—'], ['Status', transaction.status], ['Created', new Date(transaction.createdAt).toLocaleString()], ['Gift card reference', transaction.giftCardVerificationId || '—']]
-  return <main className="page trading-page"><Link className="back-link" to="/transactions"><ArrowLeft size={15} /> Transactions</Link><Header eyebrow="Safe transaction details" title={transaction.transactionId} text="Only prototype metadata is shown. No card credential or PIN is stored." /><div className="trading-panel transaction-detail-card"><div className="transaction-status-row"><span><Banknote size={21} /></span><b>{transaction.type}</b><Status value={transaction.status} /></div><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><Notice>Prototype transaction. No real payment, bank payout, escrow, or settlement occurred.</Notice></div></main>
+  const runLifecycleAction = async (action, successMessage) => {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await action(transaction.orderId, user)
+      setTransaction(await getTransactionById(id, user.id, user.email))
+      setNotice(successMessage)
+    } catch (issue) {
+      setError(issue.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const isDatabasePurchase = transaction.databaseBacked && transaction.type === 'P2P Purchase' && transaction.userId === user.id
+  const rows = [['Transaction ID', transaction.transactionId], ['Order ID', transaction.orderId || '—'], ['Order status', transaction.orderStatus || '—'], ['Type', transaction.type], ['Brand', transaction.brand], ['Currency', transaction.currency], ['Amount', money(transaction.currency, transaction.amount ?? transaction.estimatedPayout)], ['Card balance', transaction.faceValue == null ? '—' : money(transaction.currency, transaction.faceValue)], ['Fee', transaction.fee == null ? '—' : money(transaction.currency, transaction.fee)], ['Payout method', transaction.payoutMethod || '—'], ['Status', transaction.status], ['Created', new Date(transaction.createdAt).toLocaleString()], ['Gift card reference', transaction.giftCardVerificationId || '—']]
+  return <main className="page trading-page"><Link className="back-link" to="/transactions"><ArrowLeft size={15} /> Transactions</Link><Header eyebrow="Safe transaction details" title={transaction.transactionId} text="Only prototype metadata is shown. No card credential or PIN is stored." /><div className="trading-panel transaction-detail-card"><div className="transaction-status-row"><span><Banknote size={21} /></span><b>{transaction.type}</b><Status value={transaction.status} /></div><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><Notice>TEST/DEMO lifecycle only. No real payment, bank payout, escrow, or settlement occurs.</Notice>{import.meta.env.DEV && isDatabasePurchase && ['PENDING', 'PAYMENT_PENDING'].includes(transaction.orderStatus) && <button className="button primary" disabled={busy} onClick={() => runLifecycleAction(simulateMarketplacePayment, 'Payment marked secured for this demo. No real payment was made.')}>{busy ? 'Updating…' : 'Simulate Payment'}</button>}{import.meta.env.DEV && isDatabasePurchase && transaction.orderStatus === 'DELIVERED' && <button className="button primary" disabled={busy} onClick={() => runLifecycleAction(confirmMarketplaceGiftCardReceived, 'Transaction completed. Seller payout was simulated; no funds were transferred.')}>{busy ? 'Updating…' : 'Confirm Gift Card Received'}</button>}{isDatabasePurchase && transaction.orderStatus === 'COMPLETED' && <p className="trading-success" role="status"><CheckCircle2 size={18} /> Transaction Completed · Seller payout simulated. No real funds were transferred.</p>}{transaction.escrowRecordId && <Link className="button outline" to={`/escrow/${transaction.escrowRecordId}`}>View purchase lifecycle</Link>}{error && <p className="trading-error" role="alert">{error}</p>}{notice && <p className="trading-success" role="status">{notice}</p>}</div></main>
 }
 
 export function AdminTradingPage() {

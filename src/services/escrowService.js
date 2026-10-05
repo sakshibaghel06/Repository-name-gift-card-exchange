@@ -203,7 +203,7 @@ export async function getEscrow(escrowId, actor) {
 
   const { data, error } = await supabase
     .from('escrow_transactions')
-    .select('id, order_id, buyer_id, seller_id, amount, currency, status, created_at, updated_at')
+    .select('id, order_id, buyer_id, seller_id, amount, currency, status, funded_at, buyer_confirmed_at, released_at, created_at, updated_at')
     .eq('id', escrowId)
     .maybeSingle()
   if (error) throw error
@@ -217,7 +217,23 @@ export async function getEscrow(escrowId, actor) {
     .maybeSingle()
   if (transactionError) throw transactionError
 
+  let delivery = null
+  if (data.buyer_id === actor.id) {
+    const { data: deliveryData, error: deliveryError } = await supabase
+      .from('deliveries')
+      .select('status, delivered_at')
+      .eq('order_id', data.order_id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (deliveryError) throw deliveryError
+    delivery = deliveryData
+  }
+
   const metadata = transaction?.metadata || {}
+  const escrowStatus = String(data.status || 'pending').toUpperCase()
+  const deliveryStatus = delivery?.status?.toUpperCase()
+    || (['RELEASE_PENDING', 'RELEASED'].includes(escrowStatus) ? 'DELIVERED' : 'PENDING')
   return delay({
     id: data.id,
     escrowId: data.id,
@@ -232,22 +248,78 @@ export async function getEscrow(escrowId, actor) {
     faceValue: metadata.face_value == null ? null : Number(metadata.face_value),
     maskedCardNumber: metadata.masked_card_number || null,
     giftCardVerificationId: metadata.gift_card_verification_id || null,
-    status: String(data.status || 'pending').toUpperCase(),
-    paymentStatus: 'NOT_STARTED',
-    cardStatus: 'AVAILABLE',
-    deliveryStatus: 'NOT_STARTED',
-    buyerConfirmation: 'NOT_STARTED',
-    disputeStatus: 'NOT_STARTED',
+    status: escrowStatus,
+    paymentStatus: data.funded_at ? 'SIMULATED_PAID' : 'NOT_STARTED',
+    cardStatus: data.funded_at ? 'LOCKED' : 'AVAILABLE',
+    deliveryStatus,
+    buyerConfirmation: data.buyer_confirmed_at ? 'CONFIRMED' : 'PENDING',
+    disputeStatus: 'NONE',
     expiresAt: null,
+    paymentSecuredAt: data.funded_at,
+    deliveredAt: delivery?.delivered_at || null,
+    buyerConfirmedAt: data.buyer_confirmed_at,
+    releasedAt: data.released_at,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     databaseBacked: true,
   })
 }
 
+async function callPurchaseLifecycleRpc(functionName, orderId, actor) {
+  requireUser(actor)
+  if (!actor.id || !orderId) throw new Error('A signed-in user and purchase order are required.')
+  const { error } = await supabase.rpc(functionName, { p_order_id: orderId })
+  if (error) throw error
+}
+
+export async function simulateMarketplacePayment(orderId, buyer) {
+  return callPurchaseLifecycleRpc('simulate_marketplace_payment', orderId, buyer)
+}
+
+export async function markMarketplaceGiftCardDelivered(orderId, seller) {
+  return callPurchaseLifecycleRpc('mark_marketplace_gift_card_delivered', orderId, seller)
+}
+
+export async function confirmMarketplaceGiftCardReceived(orderId, buyer) {
+  return callPurchaseLifecycleRpc('confirm_marketplace_gift_card_received', orderId, buyer)
+}
+
 export async function getEscrows(actor, filter = 'All') {
   requireUser(actor)
-  const escrows = read(ESCROW_KEY).map(markExpiredIfNeeded).filter((escrow) => actor.role === 'admin' || escrow.buyerId === actor.email || escrow.sellerId === actor.email)
+  const localEscrows = read(ESCROW_KEY).map(markExpiredIfNeeded).filter((escrow) => actor.role === 'admin' || escrow.buyerId === actor.email || escrow.sellerId === actor.email)
+  const databaseEscrows = []
+
+  if (actor.id) {
+    const { data, error } = await supabase
+      .from('escrow_transactions')
+      .select('id, buyer_id, seller_id, amount, currency, status, funded_at, buyer_confirmed_at, created_at, updated_at')
+      .or(`buyer_id.eq.${actor.id},seller_id.eq.${actor.id}`)
+      .order('created_at', { ascending: false })
+    if (error) throw error
+
+    for (const row of data || []) {
+      const status = String(row.status || 'pending').toUpperCase()
+      databaseEscrows.push({
+        id: row.id,
+        escrowId: row.id,
+        buyerId: row.buyer_id === actor.id ? actor.email : row.buyer_id,
+        sellerId: row.seller_id === actor.id ? actor.email : row.seller_id,
+        brand: 'Marketplace purchase',
+        amount: Number(row.amount),
+        currency: row.currency,
+        status,
+        paymentStatus: row.funded_at ? 'SIMULATED_PAID' : 'NOT_STARTED',
+        cardStatus: row.funded_at ? 'LOCKED' : 'AVAILABLE',
+        deliveryStatus: ['RELEASE_PENDING', 'RELEASED'].includes(status) ? 'DELIVERED' : 'PENDING',
+        buyerConfirmation: row.buyer_confirmed_at ? 'CONFIRMED' : 'PENDING',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        databaseBacked: true,
+      })
+    }
+  }
+
+  const escrows = [...localEscrows, ...databaseEscrows]
   const filtered = filter === 'All' ? escrows : escrows.filter((escrow) => escrow.status === filter)
   return delay(filtered.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)))
 }
