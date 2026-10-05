@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabase'
+
 const STORAGE_KEY = 'giftly-wallets'
 const EVENT_NAME = 'giftly-wallet-change'
 const DEMO_RATES = { INR: 1, USD: 83, EUR: 90, GBP: 105, AED: 22.6, SGD: 62, AUD: 54, CAD: 61 }
@@ -61,6 +63,68 @@ export function initializeWallet(userId) {
 
 export function getWallet(userId) {
   return initializeWallet(userId)
+}
+
+export async function getSupabaseWalletBalances(userId) {
+  requireUser(userId)
+
+  const { data, error } = await supabase
+    .from('wallets')
+    .select('id, currency, balance, status')
+    .eq('user_id', userId)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function requestMarketplaceCashout({ currency, amount, idempotencyKey }) {
+  const { data, error } = await supabase.rpc('request_marketplace_cashout', {
+    p_currency: currency,
+    p_amount: amount,
+    p_idempotency_key: idempotencyKey,
+  })
+
+  if (error) throw error
+  if (!data?.[0]) throw new Error('The cash-out request returned no payout details.')
+  return data[0]
+}
+
+export async function getMarketplaceCashouts(userId) {
+  requireUser(userId)
+
+  const { data, error } = await supabase
+    .from('payouts')
+    .select('id, amount, currency, status, provider, provider_reference, requested_at')
+    .eq('seller_id', userId)
+    .eq('payout_type', 'cashout')
+    .order('requested_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getMarketplaceEarnings(userId) {
+  requireUser(userId)
+
+  const { data: wallets, error: walletError } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('user_id', userId)
+
+  const walletIds = (wallets || []).map((wallet) => wallet.id)
+  if (walletError) throw walletError
+  if (!walletIds.length) return []
+
+  const { data, error } = await supabase
+    .from('wallet_transactions')
+    .select('id, wallet_id, amount, currency, reference_id, description, created_at')
+    .in('wallet_id', walletIds)
+    .eq('type', 'credit')
+    .eq('reference_type', 'order')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
 }
 
 export function getBalances(userId) {

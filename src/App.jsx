@@ -13,7 +13,7 @@ import { GiftCardVerificationPage, GiftCardVerificationHistoryPage, AdminGiftCar
 import { AuctionCreatePage, InstantCashoutPage, ListingDetailPage, MarketplaceListingsPage, P2PCreatePage, SellMethodPage } from './Trading'
 import { AdminTradingPage, AuctionDetailPage, AuctionMarketplacePage, MyBidsPage, MyListingsPage, TradingActivity, TransactionDetailPage, TransactionsPage } from './TradingPages'
 import { AdminDisputesPage, AdminEscrowDashboardPage, DisputeDetailPage, DisputesPage, EscrowActivity, EscrowDetailPage, MyEscrowsPage } from './Escrow'
-import { WalletConvertPage, WalletDepositPage, WalletPage, WalletTransactionDetailPage, WalletTransactionsPage, WalletWithdrawPage } from './Wallet'
+import { MarketplaceCashoutPage, WalletConvertPage, WalletDepositPage, WalletPage, WalletTransactionDetailPage, WalletTransactionsPage, WalletWithdrawPage } from './Wallet'
 import { AdminWalletPage } from './AdminWallet'
 import { DeliveryPage } from './Delivery'
 import { DeliveriesPage } from './Deliveries'
@@ -23,7 +23,6 @@ import { OperationsPage } from './Operations'
 import { AdminFraudPage, AdminManagementPage } from './AdminManagement'
 import { LegalPage } from './LegalPages'
 import { RegionCurrencyControls } from './GlobalPreferences'
-import { getWalletSummary } from './services/walletService'
 import { getUnreadCount, NOTIFICATION_CHANGE_EVENT } from './services/notificationService'
 import { getPublicCatalog } from './services/catalogService'
 import heroImage from './assets/hero.png'
@@ -349,18 +348,24 @@ function LoginPage({ mode = 'login' }) {
 
 function DashboardPage() {
   const { user } = useAuth()
-  const { wallet, selectedCurrency, transactions } = useWallet()
-  const total = wallet ? getWalletSummary(wallet.userId, selectedCurrency).totalValue : 0
+  const {
+    selectedCurrency, transactions, marketplaceBalances, marketplaceWallets,
+    marketplaceWalletLoading, marketplaceWalletError, refreshMarketplaceWallet,
+  } = useWallet()
+  const selectedMarketplaceWallet = marketplaceWallets.find((item) => item.currency === selectedCurrency)
   const verificationStatus = user?.verification?.identityStatus || 'Not Started'
+  useEffect(() => {
+    refreshMarketplaceWallet()
+  }, [refreshMarketplaceWallet])
   const formatAmount = (currency, value) => {
     try { return new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(value) || 0) }
     catch { return `${currency} ${Number(value) || 0}` }
   }
   return <main className="page dashboard-page">
     <header className="dashboard-welcome"><div><p className="eyebrow">Your Giftly account</p><h1>Welcome back, {user?.name || 'Giftly member'}</h1><p>Your overview of wallet and prototype exchange activity.</p></div><Link className="button primary" to="/marketplace">Explore marketplace <ArrowRight size={15} /></Link></header>
-    <div className="dashboard-metrics"><Link to="/wallet" className="dashboard-metric wallet-metric"><span className="dashboard-metric-icon"><WalletIcon size={18} /></span><small>Wallet balance · {selectedCurrency}</small><b>{formatAmount(selectedCurrency, total)}</b><span className="dashboard-metric-foot">Demo value · no real funds <ArrowRight size={14} /></span></Link><Link to="/verification" className="dashboard-metric"><span className="dashboard-metric-icon gold"><BadgeCheck size={18} /></span><small>Identity verification</small><b className="dashboard-status-text">{verificationStatus}</b><span className="dashboard-metric-foot">Prototype status <ArrowRight size={14} /></span></Link><Link to="/orders" className="dashboard-metric"><span className="dashboard-metric-icon pink"><ShoppingBag size={18} /></span><small>Orders</small><b className="dashboard-status-text">{getSavedOrders().length}</b><span className="dashboard-metric-foot">View your recent prototype orders <ArrowRight size={14} /></span></Link></div>
+    <div className="dashboard-metrics"><Link to="/wallet" className="dashboard-metric wallet-metric"><span className="dashboard-metric-icon"><WalletIcon size={18} /></span><small>Marketplace wallet · {selectedCurrency}</small><b>{marketplaceWalletLoading ? 'Loading…' : marketplaceWalletError ? 'Unavailable' : selectedMarketplaceWallet ? formatAmount(selectedCurrency, marketplaceBalances[selectedCurrency]) : 'No wallet'}</b><span className="dashboard-metric-foot">{marketplaceWalletError ? 'Unable to load marketplace balance' : selectedMarketplaceWallet ? 'Supabase · read-only balance' : marketplaceWalletLoading ? 'Loading Supabase balance' : `No ${selectedCurrency} wallet`} <ArrowRight size={14} /></span></Link><Link to="/verification" className="dashboard-metric"><span className="dashboard-metric-icon gold"><BadgeCheck size={18} /></span><small>Identity verification</small><b className="dashboard-status-text">{verificationStatus}</b><span className="dashboard-metric-foot">Prototype status <ArrowRight size={14} /></span></Link><Link to="/orders" className="dashboard-metric"><span className="dashboard-metric-icon pink"><ShoppingBag size={18} /></span><small>Orders</small><b className="dashboard-status-text">{getSavedOrders().length}</b><span className="dashboard-metric-foot">View your recent prototype orders <ArrowRight size={14} /></span></Link></div>
     <section className="dashboard-quick-section"><div className="dashboard-section-heading"><div><p className="eyebrow">Shortcuts</p><h2>Quick actions</h2></div></div><div className="dashboard-grid"><Link className="dashboard-card" to="/gift-cards"><span className="dashboard-card-icon"><Gift size={18} /></span><b>Browse gift cards</b><span>Explore the sample catalog</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/sell-method"><span className="dashboard-card-icon"><ArrowUpRight size={18} /></span><b>Sell a gift card</b><span>Start with card verification</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/wallet/deposit"><span className="dashboard-card-icon"><WalletIcon size={18} /></span><b>Add demo funds</b><span>Simulated wallet activity</span><ChevronRight size={16} /></Link><Link className="dashboard-card" to="/gift-card-verification"><span className="dashboard-card-icon"><ShieldCheck size={18} /></span><b>Verify a gift card</b><span>Mock OCR and balance check</span><ChevronRight size={16} /></Link></div></section>
-    <section className="dashboard-transactions"><div className="dashboard-section-heading"><div><p className="eyebrow">Wallet ledger</p><h2>Recent transactions</h2></div><Link className="text-link" to="/wallet/transactions">View history <ArrowRight size={14} /></Link></div>{transactions.length ? <div className="dashboard-transaction-list">{transactions.slice(0, 4).map((item) => <Link to={`/wallet/transactions/${item.id}`} key={item.id}><span className="dashboard-transaction-icon"><WalletIcon size={16} /></span><span className="dashboard-transaction-copy"><b>{item.description || item.type.replaceAll('_', ' ')}</b><small>{new Date(item.createdAt).toLocaleDateString()} · {item.status}</small></span><strong>{formatAmount(item.currency, item.amount)}</strong><ChevronRight size={15} /></Link>)}</div> : <div className="dashboard-empty"><span>No wallet activity yet</span><Link to="/wallet">Open your prototype wallet <ArrowRight size={14} /></Link></div>}</section>
+    <section className="dashboard-transactions"><div className="dashboard-section-heading"><div><p className="eyebrow">Demo Wallet · local history</p><h2>Demo transactions</h2></div><Link className="text-link" to="/wallet/transactions">View demo history <ArrowRight size={14} /></Link></div>{transactions.length ? <div className="dashboard-transaction-list">{transactions.slice(0, 4).map((item) => <Link to={`/wallet/transactions/${item.id}`} key={item.id}><span className="dashboard-transaction-icon"><WalletIcon size={16} /></span><span className="dashboard-transaction-copy"><b>{item.description || item.type.replaceAll('_', ' ')}</b><small>{new Date(item.createdAt).toLocaleDateString()} · {item.status}</small></span><strong>{formatAmount(item.currency, item.amount)}</strong><ChevronRight size={15} /></Link>)}</div> : <div className="dashboard-empty"><span>No demo wallet activity yet</span><Link to="/wallet">Open your Demo Wallet <ArrowRight size={14} /></Link></div>}</section>
     <TradingActivity />
     <EscrowActivity />
   </main>
@@ -470,6 +475,7 @@ function ApplicationRoutes() {
         <Route path="disputes" element={<DisputesPage />} />
         <Route path="disputes/:id" element={<DisputeDetailPage />} />
         <Route path="wallet" element={<WalletPage />} />
+        <Route path="wallet/cashout" element={<MarketplaceCashoutPage />} />
         <Route path="wallet/deposit" element={<WalletDepositPage />} />
         <Route path="wallet/withdraw" element={<WalletWithdrawPage />} />
         <Route path="wallet/convert" element={<WalletConvertPage />} />

@@ -1,8 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, startTransition, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, startTransition, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import {
-  convertCurrency, getTransactions, getWallet, setPreferredCurrency as savePreferredCurrency,
+  convertCurrency, getSupabaseWalletBalances, getTransactions, getWallet, setPreferredCurrency as savePreferredCurrency,
   simulateDeposit, simulateWithdrawal, WALLET_CHANGE_EVENT,
 } from './services/walletService'
 import { createNotification } from './services/notificationService'
@@ -394,12 +394,84 @@ export const useAuth = () =>
 ========================================================= */
 
 const WalletContext = createContext(null)
+const marketplaceWalletErrorMessage = (error) =>
+  error && typeof error.message === 'string' && error.message
+    ? error.message
+    : 'Unable to load marketplace wallet balances.'
+
 export function WalletProvider({ children }) {
-  const { user } = useAuth()
+  const { user, authReady } = useAuth()
   const [wallet, setWallet] = useState(() => user?.email ? getWallet(user.email) : null)
   const [loading, setLoading] = useState(false)
+  const [marketplaceWalletResult, setMarketplaceWalletResult] = useState(null)
+  const [marketplaceWalletFailure, setMarketplaceWalletFailure] = useState(null)
   const [notification, setNotification] = useState('')
+  const marketplaceRequestId = useRef(0)
+  const userId = user?.id
   const currentWallet = wallet?.userId === user?.email ? wallet : null
+
+  const loadMarketplaceWallet = useCallback(async (userId) => {
+    const requestId = ++marketplaceRequestId.current
+    try {
+      const rows = await getSupabaseWalletBalances(userId)
+      if (requestId !== marketplaceRequestId.current) return
+      setMarketplaceWalletResult({
+        userId,
+        wallets: rows,
+        balances: Object.fromEntries(rows.map(({ currency, balance }) => [currency, Number(balance)])),
+      })
+      setMarketplaceWalletFailure(null)
+    } catch (error) {
+      if (requestId !== marketplaceRequestId.current) return
+      setMarketplaceWalletFailure({
+        userId,
+        message: marketplaceWalletErrorMessage(error),
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!authReady || !userId) {
+      marketplaceRequestId.current += 1
+      return
+    }
+    let active = true
+    const requestId = ++marketplaceRequestId.current
+    getSupabaseWalletBalances(userId)
+      .then((rows) => {
+        if (!active || requestId !== marketplaceRequestId.current) return
+        setMarketplaceWalletResult({
+          userId,
+          wallets: rows,
+          balances: Object.fromEntries(rows.map(({ currency, balance }) => [currency, Number(balance)])),
+        })
+        setMarketplaceWalletFailure(null)
+      })
+      .catch((error) => {
+        if (!active || requestId !== marketplaceRequestId.current) return
+        setMarketplaceWalletFailure({
+          userId,
+          message: marketplaceWalletErrorMessage(error),
+        })
+      })
+    return () => {
+      active = false
+    }
+  }, [authReady, userId])
+
+  const refreshMarketplaceWallet = useCallback(() => {
+    if (authReady && userId) return loadMarketplaceWallet(userId)
+    return Promise.resolve()
+  }, [authReady, userId, loadMarketplaceWallet])
+  const marketplaceWalletError = marketplaceWalletFailure && marketplaceWalletFailure.userId === userId
+    ? marketplaceWalletFailure.message
+    : ''
+  const marketplaceWalletData = marketplaceWalletResult?.userId === userId && !marketplaceWalletError
+    ? marketplaceWalletResult
+    : null
+  const marketplaceWallets = marketplaceWalletData?.wallets || []
+  const marketplaceBalances = marketplaceWalletData?.balances || {}
+  const marketplaceWalletLoading = !authReady || Boolean(userId && !marketplaceWalletData && !marketplaceWalletError)
 
   const refreshWallet = () => {
     if (!user?.email) { setWallet(null); setLoading(false); return null }
@@ -448,6 +520,6 @@ export function WalletProvider({ children }) {
   const setSelectedCurrency = (currency) => runWalletAction(() => savePreferredCurrency(user?.email, currency), 'Default currency updated')
   const transactions = user?.email ? getTransactions(user.email) : []
 
-  return <WalletContext.Provider value={{ wallet: currentWallet, balances: currentWallet?.balances || {}, selectedCurrency: currentWallet?.preferredCurrency || 'INR', setSelectedCurrency, deposit, withdraw, convert, transactions, refreshWallet, loading, notification, setNotification }}>{children}</WalletContext.Provider>
+  return <WalletContext.Provider value={{ wallet: currentWallet, balances: currentWallet?.balances || {}, selectedCurrency: currentWallet?.preferredCurrency || 'INR', setSelectedCurrency, deposit, withdraw, convert, transactions, refreshWallet, loading, notification, setNotification, marketplaceBalances, marketplaceWallets, marketplaceWalletLoading, marketplaceWalletError, refreshMarketplaceWallet }}>{children}</WalletContext.Provider>
 }
 export const useWallet = () => useContext(WalletContext)
