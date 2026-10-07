@@ -22,6 +22,7 @@ import { NotificationsPage, AdminNotificationsPage } from './Notifications'
 import { OperationsPage } from './Operations'
 import { AdminFraudPage, AdminManagementPage } from './AdminManagement'
 import { LegalPage } from './LegalPages'
+import { SupportChatPage, SupportChatWidget } from './SupportChat'
 import { RegionCurrencyControls } from './GlobalPreferences'
 import { getUnreadCount, NOTIFICATION_CHANGE_EVENT } from './services/notificationService'
 import { getPublicCatalog } from './services/catalogService'
@@ -79,9 +80,10 @@ function StorefrontLayout() {
     </div></header>
     <Outlet />
     <footer className="footer">
-      <div className="footer-main"><div><Brand /><p className="footer-copy">Give More. Save More. Gift Smarter.<br />A gift-card exchange prototype.</p></div><div><b>Explore</b><Link to="/gift-cards">Gift cards</Link><Link to="/marketplace">Marketplace</Link><Link to="/auctions">Auctions</Link><Link to="/how-it-works">How it works</Link></div><div><b>Your account</b><Link to={user ? '/dashboard' : '/login'}>Dashboard</Link><Link to="/wallet">Wallet</Link><Link to="/verification">Verification</Link><Link to="/notifications">Notifications</Link></div><div><b>Trust & information</b><Link to="/terms">Terms</Link><Link to="/privacy">Privacy</Link><Link to="/compliance">Compliance</Link><Link to="/security">Security</Link><p>Payments, verification, and transactions are simulated.</p></div></div>
+      <div className="footer-main"><div><Brand /><p className="footer-copy">Give More. Save More. Gift Smarter.<br />A gift-card exchange prototype.</p></div><div><b>Explore</b><Link to="/gift-cards">Gift cards</Link><Link to="/marketplace">Marketplace</Link><Link to="/auctions">Auctions</Link><Link to="/how-it-works">How it works</Link></div><div><b>Your account</b><Link to={user ? '/dashboard' : '/login'}>Dashboard</Link><Link to="/wallet">Wallet</Link><Link to="/verification">Verification</Link><Link to="/notifications">Notifications</Link><Link to="/support">Support</Link></div><div><b>Trust & information</b><Link to="/terms">Terms</Link><Link to="/privacy">Privacy</Link><Link to="/compliance">Compliance</Link><Link to="/security">Security</Link><p>Payments, verification, and transactions are simulated.</p></div></div>
       <div className="footer-bottom"><span>© Giftly Exchange · Product prototype</span><span>Give More. Save More. Gift Smarter.</span></div>
     </footer>
+    <SupportChatWidget />
   </>
 }
 
@@ -376,10 +378,6 @@ function ProfilePage() {
   return <main className="page"><header className="page-header"><p className="eyebrow">Account settings</p><h1>Your profile</h1><p>Local prototype account details.</p></header><section className="panel profile-panel"><div><span>Name</span><b>{user?.name}</b></div><div><span>Email</span><b>{user?.email}</b></div><div><span>Role</span><b>{user?.role === 'admin' ? 'Admin demo' : 'Customer'}</b></div><p className="mock-note"><ShieldCheck size={15} /> Authentication and account data are stored locally for this prototype.</p><Link className="button outline" to="/verification">Manage verification</Link></section></main>
 }
 
-function SupportPage() {
-  return <main className="page"><header className="page-header"><p className="eyebrow">Giftly Exchange</p><h1>Support</h1><p>Support messaging is not connected in this prototype. For now, review the relevant workflow notice or return to your dashboard.</p></header><Link className="button outline" to="/dashboard">Back to dashboard</Link></main>
-}
-
 function LegacySellRoute() {
   const location = useLocation()
   return <Navigate to={`/sell-method${location.search}`} replace />
@@ -440,7 +438,6 @@ function ApplicationRoutes() {
       <Route path="auctions/:auctionId" element={<AuctionDetailPage />} />
       <Route path="login" element={<LoginPage mode="login" />} />
       <Route path="register" element={<LoginPage mode="register" />} />
-      <Route path="support" element={<SupportPage />} />
       <Route path="terms" element={<LegalPage page="terms" />} />
       <Route path="privacy" element={<LegalPage page="privacy" />} />
       <Route path="compliance" element={<LegalPage page="compliance" />} />
@@ -449,6 +446,7 @@ function ApplicationRoutes() {
       <Route path="cart" element={<CartPage />} />
       <Route path="sell-gift-card" element={<LegacySellRoute />} />
       <Route element={<RequireCustomer />}>
+        <Route path="support" element={<SupportChatPage />} />
         <Route path="checkout" element={<CheckoutPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="orders/:orderId" element={<OrderDetailPage />} />
